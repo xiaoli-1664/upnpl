@@ -1,0 +1,26 @@
+[
+{
+  "directory": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/build",
+  "command": "/usr/bin/c++  -I/usr/local/include/eigen3 -I/home/ljj/source_code/PL-MCVO/third-party/upnpl/include -I/usr/local/include/opencv4 -g -std=gnu++17 -o CMakeFiles/UPnPL.dir/src/UPnPL.cc.o -c /home/ljj/source_code/PL-MCVO/third-party/upnpl/src/UPnPL.cc",
+  "file": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/src/UPnPL.cc",
+  "output": "CMakeFiles/UPnPL.dir/src/UPnPL.cc.o"
+},
+{
+  "directory": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/build",
+  "command": "/usr/bin/c++  -I/usr/local/include/eigen3 -I/home/ljj/source_code/PL-MCVO/third-party/upnpl/include -isystem /usr/local/include/opencv4 -g -std=gnu++17 -o CMakeFiles/sim_test.dir/src/sim_test.cc.o -c /home/ljj/source_code/PL-MCVO/third-party/upnpl/src/sim_test.cc",
+  "file": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/src/sim_test.cc",
+  "output": "CMakeFiles/sim_test.dir/src/sim_test.cc.o"
+},
+{
+  "directory": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/build",
+  "command": "/usr/bin/c++  -I/usr/local/include/eigen3 -I/home/ljj/source_code/PL-MCVO/third-party/upnpl/include -isystem /usr/local/include/opencv4 -g -std=gnu++17 -o CMakeFiles/vgg_real_test.dir/src/vgg_real_test.cc.o -c /home/ljj/source_code/PL-MCVO/third-party/upnpl/src/vgg_real_test.cc",
+  "file": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/src/vgg_real_test.cc",
+  "output": "CMakeFiles/vgg_real_test.dir/src/vgg_real_test.cc.o"
+},
+{
+  "directory": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/build",
+  "command": "/usr/bin/c++  -I/usr/local/include/eigen3 -I/home/ljj/source_code/PL-MCVO/third-party/upnpl/include -isystem /usr/local/include/opencv4 -g -std=gnu++17 -o CMakeFiles/tum_test.dir/src/tum_test.cc.o -c /home/ljj/source_code/PL-MCVO/third-party/upnpl/src/tum_test.cc",
+  "file": "/home/ljj/source_code/PL-MCVO/third-party/upnpl/src/tum_test.cc",
+  "output": "CMakeFiles/tum_test.dir/src/tum_test.cc.o"
+}
+]
