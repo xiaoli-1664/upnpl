@@ -1,2 +1,0 @@
-/usr/bin/ar qc libUPnPL.a CMakeFiles/UPnPL.dir/src/UPnPL.cc.o
-/usr/bin/ranlib libUPnPL.a

@@ -1,6 +1,0 @@
-/home/ljj/source_code/PL-MCVO/third-party/upnpl/build/CMakeFiles/UPnPL.dir
-/home/ljj/source_code/PL-MCVO/third-party/upnpl/build/CMakeFiles/sim_test.dir
-/home/ljj/source_code/PL-MCVO/third-party/upnpl/build/CMakeFiles/vgg_real_test.dir
-/home/ljj/source_code/PL-MCVO/third-party/upnpl/build/CMakeFiles/tum_test.dir
-/home/ljj/source_code/PL-MCVO/third-party/upnpl/build/CMakeFiles/edit_cache.dir
-/home/ljj/source_code/PL-MCVO/third-party/upnpl/build/CMakeFiles/rebuild_cache.dir
