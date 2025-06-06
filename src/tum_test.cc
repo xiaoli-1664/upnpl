@@ -6,9 +6,58 @@
 #include <vector>
 #include <yaml-cpp/yaml.h>
 
+#include "UPnPL.h"
+#include "generate.h"
 #include "rapidcsv.h"
 
 using namespace std;
+
+void loadTUMCameraParameters(const string &cam_file, Camera &camera1,
+                             Camera &camera2) {
+    YAML::Node config = YAML::LoadFile(cam_file);
+    vector<double> intrinsics1 =
+        config["cam0"]["intrinsics"].as<vector<double>>();
+    vector<double> intrinsics2 =
+        config["cam1"]["intrinsics"].as<vector<double>>();
+    camera1.fx = intrinsics1[0];
+    camera1.fy = intrinsics1[1];
+    camera1.cx = intrinsics1[2];
+    camera1.cy = intrinsics1[3];
+    camera2.fx = intrinsics2[0];
+    camera2.fy = intrinsics2[1];
+    camera2.cx = intrinsics2[2];
+    camera2.cy = intrinsics2[3];
+
+    camera1.distortion_model = config["cam0"]["distortion_model"].as<string>();
+    camera2.distortion_model = config["cam1"]["distortion_model"].as<string>();
+
+    camera1.distortion_coeffs =
+        config["cam0"]["distortion_coeffs"].as<vector<double>>();
+    camera2.distortion_coeffs =
+        config["cam1"]["distortion_coeffs"].as<vector<double>>();
+
+    camera1.image_size = config["cam0"]["resolution"].as<vector<double>>();
+    camera2.image_size = config["cam1"]["resolution"].as<vector<double>>();
+
+    YAML::Node Tbc1_node = config["cam0"]["T_cam_imu"];
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            camera1.Tbc(i, j) = Tbc1_node[i][j].as<double>();
+        }
+    }
+    camera1.Tbc = camera1.Tbc.inverse();
+
+    YAML::Node Tbc2_node = config["cam1"]["T_cam_imu"];
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            camera2.Tbc(i, j) = Tbc2_node[i][j].as<double>();
+        }
+    }
+    camera2.Tbc = camera2.Tbc.inverse();
+
+    camera1.getRectifiedFisheyeCamera();
+    camera2.getRectifiedFisheyeCamera();
+}
 
 void loadTUMImage(const string &image_path, const string &time_file,
                   const string &gt_file, vector<string> &image_files,
@@ -112,6 +161,62 @@ int main() {
                  pose_gt1);
     loadTUMImage(image2_path, time2_file, gt_file, image2_files, time2,
                  pose_gt2);
+
+    vector<Camera> cameras(2);
+    loadTUMCameraParameters(calib_file, cameras[0], cameras[1]);
+
+    vector<vector<string>> image_files(2);
+    vector<vector<double>> times(2);
+    vector<vector<Eigen::Isometry3d>> poses_gt(2);
+
+    for (size_t i = 0; i < image1_files.size(); ++i) {
+        image_files[0].push_back(image1_files[i]);
+        times[0].push_back(time1[i]);
+        poses_gt[0].push_back(pose_gt1[i]);
+    }
+
+    for (size_t i = 0; i < image2_files.size(); ++i) {
+        image_files[1].push_back(image2_files[i]);
+        times[1].push_back(time2[i]);
+        poses_gt[1].push_back(pose_gt2[i]);
+    }
+
+    vector<Eigen::Matrix3d> R_bc;
+    vector<Eigen::Vector3d> t_bc;
+    for (int j = 0; j < cameras.size(); ++j) {
+        R_bc.push_back(cameras[j].Tbc.linear());
+        t_bc.push_back(cameras[j].Tbc.translation());
+    }
+
+    for (int i = 0; i < image_files[0].size(); ++i) {
+        vector<Eigen::Vector3d> points_w;
+        vector<Eigen::VectorXd> lines_w;
+        vector<Eigen::Vector3d> uv_c;
+        vector<Eigen::Vector3d> normals_c;
+        vector<int> points_cam;
+        vector<int> lines_cam;
+
+        generatePnPLData(i, image_files, times, poses_gt, cameras, points_w,
+                         lines_w, uv_c, normals_c, points_cam, lines_cam);
+        Eigen::Matrix3d R_bw;
+        Eigen::Vector3d t_bw;
+        UPnPL::UPnPL upnpl;
+        upnpl.solveUPnPL(points_w, lines_w, uv_c, normals_c, points_cam,
+                         lines_cam, R_bc, t_bc, R_bw, t_bw);
+        Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
+        T_bw.linear() = R_bw;
+        T_bw.translation() = t_bw;
+        Eigen::Isometry3d T_wb = T_bw.inverse();
+        cout << "Pose for image index " << i << ": " << endl;
+        cout << "points num: " << points_w.size() << endl;
+        cout << "lines num: " << lines_w.size() << endl;
+        // cout << "Rotation:\n" << T_wb.linear() << endl;
+        cout << "Translation:\n" << T_wb.translation().transpose() << endl;
+        cout << "Ground truth Pose:\n";
+        // cout << "Rotation:\n" << poses_gt[0][i].linear() << endl;
+        cout << "Translation:\n"
+             << poses_gt[0][i].translation().transpose() << endl;
+    }
 
     return 0;
 }
