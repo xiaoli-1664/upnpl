@@ -169,8 +169,6 @@ void UPnPL::solveUPnPL(const vector<Eigen::Vector3d> &points_w,
             v_real /= v_real(0);
             Eigen::Vector3d r;
             r << v_real(1), v_real(2), v_real(3);
-            Eigen::Matrix3d R_temp;
-            CGR2Rotation(r, R_temp);
             r_cols.push_back(r);
 
             Eigen::VectorXd r_dls;
@@ -185,7 +183,7 @@ void UPnPL::solveUPnPL(const vector<Eigen::Vector3d> &points_w,
     sort(r_indices.begin(), r_indices.end(),
          [&errors](int a, int b) { return errors[a] < errors[b]; });
 
-    cout << "Real columns: " << r_cols.size() << endl;
+    // cout << "Real columns: " << r_cols.size() << endl;
 
     CGR2Rotation(r_cols[r_indices[0]], R_bw);
 

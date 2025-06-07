@@ -131,20 +131,24 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                       vector<Eigen::Vector3d> &uv_c,
                       vector<Eigen::Vector3d> &normals_c,
                       vector<int> &points_cam, vector<int> &lines_cam) {
-    // TODO:
-    // 现在是当前帧三角化，当前帧用PnP定位，为了测试性能应该是改为匹配到下一帧用PnP定位
     int num_cameras = cameras.size();
-    const int num_features = 10;
+    const int num_features = 400;
 
     for (int cam_id = 1; cam_id < num_cameras; ++cam_id) {
         const Camera &camera = cameras[cam_id];
         const string &image_file = image_files[cam_id][index];
+        const string &image_file_next = image_files[cam_id][index + 1];
         Eigen::Isometry3d pose_gt = poses_gt[cam_id][index];
         double time = times[cam_id][index];
 
         cv::Mat image = cv::imread(image_file, cv::IMREAD_GRAYSCALE);
+        cv::Mat image_next = cv::imread(image_file_next, cv::IMREAD_GRAYSCALE);
         if (image.empty()) {
             cerr << "Error: Could not read image " << image_file << endl;
+            continue;
+        }
+        if (image_next.empty()) {
+            cerr << "Error: Could not read image " << image_file_next << endl;
             continue;
         }
 
@@ -170,6 +174,11 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             cv::remap(image, undistorted_image, camera.map1, camera.map2,
                       cv::INTER_LINEAR);
             image = undistorted_image;
+
+            cv::Mat undistorted_image_next;
+            cv::remap(image_next, undistorted_image_next, camera.map1,
+                      camera.map2, cv::INTER_LINEAR);
+            image_next = undistorted_image_next;
         }
 
         cv::Mat image1;
@@ -213,14 +222,17 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         P1 = K1 * P1;
 
         cv::Ptr<cv::ORB> orb = cv::ORB::create(num_features);
-        vector<cv::KeyPoint> keypoints1, keypoints2;
-        cv::Mat descriptors1, descriptors2;
+        vector<cv::KeyPoint> keypoints1, keypoints2, keypoints_next;
+        cv::Mat descriptors1, descriptors2, descriptors_next;
         orb->detectAndCompute(image, cv::noArray(), keypoints1, descriptors1);
         orb->detectAndCompute(image1, cv::noArray(), keypoints2, descriptors2);
+        orb->detectAndCompute(image_next, cv::noArray(), keypoints_next,
+                              descriptors_next);
 
         cv::BFMatcher matcher(cv::NORM_HAMMING);
-        vector<vector<cv::DMatch>> matches;
+        vector<vector<cv::DMatch>> matches, matches_next;
         matcher.knnMatch(descriptors1, descriptors2, matches, 2);
+        matcher.knnMatch(descriptors1, descriptors_next, matches_next, 2);
 
         vector<cv::DMatch> good_matches;
         for (const auto &match : matches) {
@@ -230,10 +242,24 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             }
         }
 
+        vector<cv::DMatch> good_matches_next;
+        for (const auto &match : matches_next) {
+            if (match.size() > 1 &&
+                match[0].distance < 0.75 * match[1].distance) {
+                good_matches_next.push_back(match[0]);
+            }
+        }
+
         vector<cv::Point2f> points1, points2;
+        vector<int> indexes1(keypoints1.size(), -1);
+        vector<int> indexes2(keypoints2.size(), -1);
+        int match_i = 0;
         for (const auto &match : good_matches) {
             points1.push_back(keypoints1[match.queryIdx].pt);
+            indexes1[match.queryIdx] = match_i;
             points2.push_back(keypoints2[match.trainIdx].pt);
+            indexes2[match.trainIdx] = match_i;
+            match_i++;
         }
         cv::Mat points4D;
         cv::Mat pts1_h, pts2_h;
@@ -244,48 +270,104 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
 
         cv::triangulatePoints(P, P1, pts1_h, pts2_h, points4D);
 
-        for (int col = 0; col < points4D.cols; ++col) {
-            Eigen::Vector3d point_w;
-            point_w(0) =
-                points4D.at<double>(0, col) / points4D.at<double>(3, col);
-            point_w(1) =
-                points4D.at<double>(1, col) / points4D.at<double>(3, col);
-            point_w(2) =
-                points4D.at<double>(2, col) / points4D.at<double>(3, col);
+        for (const auto &match : good_matches_next) {
+            int col = indexes1[match.queryIdx];
+            if (col != -1) {
+                Eigen::Vector3d point_w;
+                point_w(0) =
+                    points4D.at<double>(0, col) / points4D.at<double>(3, col);
+                point_w(1) =
+                    points4D.at<double>(1, col) / points4D.at<double>(3, col);
+                point_w(2) =
+                    points4D.at<double>(2, col) / points4D.at<double>(3, col);
 
-            if (point_w.norm() < 0.1 || point_w.norm() > 100.0) {
-                continue; // Skip invalid points
+                if (point_w.norm() < 0.1 || point_w.norm() > 100.0) {
+                    continue; // Skip invalid points
+                }
+
+                points_w.push_back(point_w);
+                points_cam.push_back(cam_id);
+                Eigen::Vector3d uv;
+                camera.backProjectPixel(keypoints_next[match.trainIdx].pt.x,
+                                        keypoints_next[match.trainIdx].pt.y,
+                                        uv);
+                uv_c.push_back(uv);
+            }
+        }
+
+        const string &image_file0_next = image_files[0][index + 1];
+        cv::Mat image0_next;
+
+        if (cam_id == 1) {
+            image0_next = cv::imread(image_file0_next, cv::IMREAD_GRAYSCALE);
+            if (image0_next.empty()) {
+                cerr << "Error: Could not read image " << image_file0_next
+                     << endl;
+                continue;
             }
 
-            points_w.push_back(point_w);
-            points_cam.push_back(cam_id);
-            Eigen::Vector3d uv;
-            camera.backProjectPixel(points1[col].x, points1[col].y, uv);
-            uv_c.push_back(uv);
+            if (cameras[0].need_rictified) {
+                cv::Mat undistorted_image0_next;
+                cv::remap(image0_next, undistorted_image0_next, cameras[0].map1,
+                          cameras[0].map2, cv::INTER_LINEAR);
+                image0_next = undistorted_image0_next;
+            }
 
-            if (cam_id == 1) {
-                points_w.push_back(point_w);
-                points_cam.push_back(cam_j_id);
-                Eigen::Vector3d uv1;
-                cameras[cam_j_id].backProjectPixel(points2[col].x,
-                                                   points2[col].y, uv1);
-                uv_c.push_back(uv1);
+            vector<cv::KeyPoint> keypoints0_next;
+            cv::Mat descriptors0_next;
+            orb->detectAndCompute(image0_next, cv::noArray(), keypoints0_next,
+                                  descriptors0_next);
+            vector<vector<cv::DMatch>> matches0_next;
+            matcher.knnMatch(descriptors2, descriptors0_next, matches0_next, 2);
+            vector<cv::DMatch> good_matches0_next;
+            for (const auto &match : matches0_next) {
+                if (match.size() > 1 &&
+                    match[0].distance < 0.75 * match[1].distance) {
+                    good_matches0_next.push_back(match[0]);
+                }
+            }
+
+            for (const auto &match : good_matches0_next) {
+                int col = indexes2[match.queryIdx];
+                if (col != -1) {
+                    Eigen::Vector3d point_w;
+                    point_w(0) = points4D.at<double>(0, col) /
+                                 points4D.at<double>(3, col);
+                    point_w(1) = points4D.at<double>(1, col) /
+                                 points4D.at<double>(3, col);
+                    point_w(2) = points4D.at<double>(2, col) /
+                                 points4D.at<double>(3, col);
+                    if (point_w.norm() < 0.1 || point_w.norm() > 100.0) {
+                        continue; // Skip invalid points
+                    }
+
+                    points_w.push_back(point_w);
+                    points_cam.push_back(0);
+                    Eigen::Vector3d uv;
+                    cameras[0].backProjectPixel(
+                        keypoints0_next[match.trainIdx].pt.x,
+                        keypoints0_next[match.trainIdx].pt.y, uv);
+                    uv_c.push_back(uv);
+                }
             }
         }
 
         cv::Ptr<cv::line_descriptor::LSDDetector> lsd =
             cv::line_descriptor::LSDDetector::createLSDDetector();
-        vector<cv::line_descriptor::KeyLine> keylines1, keylines2;
-        cv::Mat lbd_descriptors1, lbd_descriptors2;
+        vector<cv::line_descriptor::KeyLine> keylines1, keylines2,
+            keylines_next;
+        cv::Mat lbd_descriptors1, lbd_descriptors2, lbd_descriptors_next;
         lsd->detect(image, keylines1, 2, 1);
         lsd->detect(image1, keylines2, 2, 1);
+        lsd->detect(image_next, keylines_next, 2, 1);
 
         cv::Ptr<cv::line_descriptor::BinaryDescriptor> bd =
             cv::line_descriptor::BinaryDescriptor::createBinaryDescriptor();
         bd->compute(image, keylines1, lbd_descriptors1);
         bd->compute(image1, keylines2, lbd_descriptors2);
+        bd->compute(image_next, keylines_next, lbd_descriptors_next);
 
-        if (keylines1.empty() || keylines2.empty()) {
+        if (keylines1.empty() || keylines2.empty() || keylines_next.empty()) {
             cerr << "No keylines detected in images." << endl;
             continue;
         }
@@ -305,6 +387,9 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         }
 
         vector<Eigen::Vector3d> normals_c_tmp, normals_c1_tmp;
+        vector<int> keyline_indexes1(keylines1.size(), -1);
+        vector<int> keyline_indexes2(keylines2.size(), -1);
+        match_i = 0;
         for (const auto &match : good_lbd_matches) {
             const auto &keyline1 = keylines1[match.queryIdx];
             const auto &keyline2 = keylines2[match.trainIdx];
@@ -330,7 +415,10 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             Eigen::Vector3d normal_c1 = uv_start1.cross(uv_end1);
 
             normals_c_tmp.push_back(normal_c.normalized());
+            keyline_indexes1[match.queryIdx] = match_i;
             normals_c1_tmp.push_back(normal_c1.normalized());
+            keyline_indexes2[match.trainIdx] = match_i;
+            match_i++;
         }
 
         vector<Eigen::VectorXd> lines_w_temp;
@@ -338,15 +426,77 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         triangulateLines(normals_c_tmp, normals_c1_tmp, T_cw, T_cw1,
                          lines_w_temp, valid);
 
-        for (int i = 0; i < lines_w_temp.size(); ++i) {
-            if (valid[i]) {
-                lines_w.push_back(lines_w_temp[i]);
+        cv::BFMatcher lbd_matcher_next(cv::NORM_HAMMING);
+        vector<vector<cv::DMatch>> lbd_matches_next;
+
+        lbd_matcher_next.knnMatch(lbd_descriptors1, lbd_descriptors_next,
+                                  lbd_matches_next, 2);
+
+        vector<cv::DMatch> good_lbd_matches_next;
+        for (const auto &match : lbd_matches_next) {
+            if (match.size() > 1 &&
+                match[0].distance < 0.75 * match[1].distance) {
+                good_lbd_matches_next.push_back(match[0]);
+            }
+        }
+
+        for (const auto &match : good_lbd_matches_next) {
+            int col = keyline_indexes1[match.queryIdx];
+            if (col != -1 && valid[col]) {
+                const auto &keyline_next = keylines_next[match.trainIdx];
+                lines_w.push_back(lines_w_temp[col]);
                 lines_cam.push_back(cam_id);
-                normals_c.push_back(normals_c_tmp[i]);
-                if (cam_id == 1) {
-                    lines_w.push_back(lines_w_temp[i]);
-                    lines_cam.push_back(cam_j_id);
-                    normals_c.push_back(normals_c1_tmp[i]);
+
+                Eigen::Vector3d uv_start;
+                camera.backProjectPixel(keyline_next.startPointX,
+                                        keyline_next.startPointY, uv_start);
+                Eigen::Vector3d uv_end;
+                camera.backProjectPixel(keyline_next.endPointX,
+                                        keyline_next.endPointY, uv_end);
+                Eigen::Vector3d normal_c = uv_start.cross(uv_end);
+
+                normals_c.push_back(normal_c.normalized());
+            }
+        }
+
+        if (cam_id == 1) {
+            vector<cv::line_descriptor::KeyLine> keylines0_next;
+            cv::Mat lbd_descriptors0_next;
+            lsd->detect(image0_next, keylines0_next, 2, 1);
+            bd->compute(image0_next, keylines0_next, lbd_descriptors0_next);
+            if (keylines0_next.empty()) {
+                cerr << "No keylines detected in image0_next." << endl;
+                continue;
+            }
+
+            vector<vector<cv::DMatch>> lbd_matches0_next;
+            lbd_matcher_next.knnMatch(lbd_descriptors2, lbd_descriptors0_next,
+                                      lbd_matches0_next, 2);
+            vector<cv::DMatch> good_lbd_matches0_next;
+            for (const auto &match : lbd_matches0_next) {
+                if (match.size() > 1 &&
+                    match[0].distance < 0.75 * match[1].distance) {
+                    good_lbd_matches0_next.push_back(match[0]);
+                }
+            }
+
+            for (const auto &match : good_lbd_matches0_next) {
+                int col = keyline_indexes2[match.queryIdx];
+                if (col != -1 && valid[col]) {
+                    const auto &keyline_next = keylines0_next[match.trainIdx];
+                    lines_w.push_back(lines_w_temp[col]);
+                    lines_cam.push_back(0);
+
+                    Eigen::Vector3d uv_start;
+                    cameras[0].backProjectPixel(keyline_next.startPointX,
+                                                keyline_next.startPointY,
+                                                uv_start);
+                    Eigen::Vector3d uv_end;
+                    cameras[0].backProjectPixel(keyline_next.endPointX,
+                                                keyline_next.endPointY, uv_end);
+                    Eigen::Vector3d normal_c = uv_start.cross(uv_end);
+
+                    normals_c.push_back(normal_c.normalized());
                 }
             }
         }
