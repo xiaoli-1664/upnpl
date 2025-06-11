@@ -18,11 +18,11 @@ struct Camera {
 };
 
 struct SimConfig {
-    int num_cameras = 4;
-    int num_points = 300;
-    int num_lines = 100;
-    double noise_std = 10;
-    double outlier_ratio = 0.1;
+    int num_cameras = 1;
+    int num_points = 0;
+    int num_lines = 50;
+    double noise_std = 0.01;
+    double outlier_ratio = 0.00000001;
     double outlier_std = 100;
 };
 
@@ -32,27 +32,59 @@ Vector3d backProjectPixel(double u, double v, const Camera &camera) {
     return {x, y, 1.0};
 }
 
+Eigen::MatrixXd cvMatToEigen(const cv::Mat &mat) {
+    Eigen::MatrixXd eigen_mat(mat.rows, mat.cols);
+    for (int i = 0; i < mat.rows; ++i) {
+        for (int j = 0; j < mat.cols; ++j) {
+            eigen_mat(i, j) = mat.at<double>(i, j);
+        }
+    }
+    return eigen_mat;
+}
+
+Eigen::Vector3d rotToCGR(const Eigen::Matrix3d &R) {
+    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+    Eigen::Matrix3d RpI = R + I;
+    if (RpI.determinant() < 1e-6) {
+        cerr << "Error: Rotation matrix is singular." << endl;
+        return Eigen::Vector3d::Zero();
+    }
+
+    Eigen::Matrix3d A = (R - I) * RpI.inverse();
+
+    Eigen::Vector3d caley;
+    caley << A(2, 1), A(0, 2), A(1, 0);
+    return caley;
+}
+
 int main() {
     SimConfig config;
 
     default_random_engine rng(42);
 
     Vector3d axis;
-    axis << 1, -4, 5;
+    axis << 0, 0, 1;
     axis.normalize();
     Matrix3d R_bw = AngleAxisd(M_PI / 6, axis).toRotationMatrix();
-    Vector3d t_bw(10, 5, 20);
+    Eigen::Vector3d r;
+    r << 0, 0, 8;
+    UPnPL::UPnPL::CGR2Rotation(r, R_bw);
+    Vector3d t_bw(0, 1, 2);
+
+    Vector3d axis_bc;
+    axis_bc << 0, 1, 2;
+    axis_bc.normalize();
 
     vector<Camera> cameras(config.num_cameras);
     vector<Matrix3d> Rbc(config.num_cameras);
     vector<Vector3d> tbc(config.num_cameras);
     for (int i = 0; i < config.num_cameras; ++i) {
         double angle = i * 2 * M_PI / config.num_cameras;
-        // cameras[i].R_bc =
-        //     AngleAxisd(angle, Vector3d::UnitY()).toRotationMatrix();
-        // cameras[i].t_bc = Vector3d(0.2 * cos(angle), 0, 0.2 * sin(angle));
-        cameras[i].R_bc = Eigen::Matrix3d::Identity();
-        cameras[i].t_bc.setZero();
+        angle = M_PI / 3;
+        cameras[i].R_bc = AngleAxisd(angle, axis_bc).toRotationMatrix();
+        // cameras[i].R_bc.setIdentity(); // Set to identity for simplicity
+        cameras[i].t_bc = Vector3d(0.2 * cos(angle), 0, 0.2 * sin(angle));
+        // cameras[i].t_bc.setZero(); // Set to zero for simplicity
         Rbc[i] = cameras[i].R_bc;
         tbc[i] = cameras[i].t_bc;
         cameras[i].fx = 1000;
@@ -213,14 +245,28 @@ int main() {
     Vector3d t_bw_est;
 
     UPnPL::UPnPL upnpl_solver;
-    upnpl_solver.solveUPnPL(points_w, lines_w, uv_c, normals_c, points_cam,
-                            lines_cam, Rbc, tbc, R_bw_est, t_bw_est);
+    upnpl_solver.solveUPnPL_EPnPL(points_w, lines_w, uv_c, normals_c,
+                                  points_cam, lines_cam, Rbc, tbc, R_bw_est,
+                                  t_bw_est);
 
     cout << "Estimated R_bw:\n" << R_bw_est << endl;
     cout << "Estimated t_bw:\n" << t_bw_est.transpose() << endl;
 
     cout << "Ground truth R_bw:\n" << R_bw << endl;
     cout << "Ground truth t_bw:\n" << t_bw.transpose() << endl;
+    Eigen::Vector3d caley = rotToCGR(R_bw);
+    cout << "Ground truth Caley vector:\n" << caley.transpose() << endl;
+
+    // Convert R_bw_est and t_bw_est to Isometry3d
+    Eigen::Isometry3d T_bw_est = Eigen::Isometry3d::Identity();
+    T_bw_est.linear() = R_bw_est;
+    T_bw_est.translation() = t_bw_est;
+
+    Eigen::Isometry3d T_wb_est = T_bw_est.inverse();
+    cout << "Estimated T_wb:\n" << T_wb_est.translation().transpose() << endl;
+
+    cout << "Ground truth T_wb:\n"
+         << (R_bw.transpose() * -t_bw).transpose() << endl;
 
     // Use OpenCV's EPnP to verify the results
 
@@ -233,9 +279,9 @@ int main() {
         Eigen::Isometry3d T_cw_epnp;
         cv::Mat R_epnp;
         cv::Rodrigues(rvec, R_epnp);
-        T_cw_epnp.linear() = Eigen::Map<Eigen::Matrix3d>(R_epnp.ptr<double>());
-        T_cw_epnp.translation() =
-            Eigen::Map<Eigen::Vector3d>(tvec.ptr<double>());
+        T_cw_epnp.linear() = cvMatToEigen(R_epnp);
+        T_cw_epnp.translation() = Eigen::Vector3d(
+            tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
 
         Eigen::Isometry3d Tbc;
         Tbc.linear() = cameras[0].R_bc;
@@ -245,6 +291,8 @@ int main() {
         cout << "EPnP Estimated R_bw:\n" << T_bw_epnp.linear() << endl;
         cout << "EPnP Estimated t_bw:\n"
              << T_bw_epnp.translation().transpose() << endl;
+        cout << "EPnP Estimated T_wb:\n"
+             << (T_bw_epnp.inverse().translation()).transpose() << endl;
     }
 
     return 0;

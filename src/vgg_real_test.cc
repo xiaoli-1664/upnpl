@@ -269,8 +269,8 @@ int main() {
     Eigen::Vector3d t_bw_est;
 
     UPnPL::UPnPL upnpl;
-    upnpl.solveUPnPL(points_w, lines_w, uv_c, normals_c, points_cam, lines_cam,
-                     Rbc, tbc, R_bw_est, t_bw_est);
+    upnpl.solveUPnPL_DLS(points_w, lines_w, uv_c, normals_c, points_cam,
+                         lines_cam, Rbc, tbc, R_bw_est, t_bw_est);
 
     cout << "ground truth Rotation:\n" << R_bw << endl;
     cout << "ground truth Translation:\n" << t_bw.transpose() << endl;

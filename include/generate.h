@@ -72,6 +72,21 @@ cv::Mat eigenToCvMat(const Eigen::MatrixXd &eigen_mat) {
     return mat;
 }
 
+Eigen::Vector3d rotToCGR(const Eigen::Matrix3d &R) {
+    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+    Eigen::Matrix3d RpI = R + I;
+    if (RpI.determinant() < 1e-6) {
+        cerr << "Error: Rotation matrix is singular." << endl;
+        return Eigen::Vector3d::Zero();
+    }
+
+    Eigen::Matrix3d A = (R - I) * RpI.inverse();
+
+    Eigen::Vector3d caley;
+    caley << A(2, 1), A(0, 2), A(1, 0);
+    return caley;
+}
+
 void triangulateLines(const vector<Eigen::Vector3d> &normals_c1,
                       const vector<Eigen::Vector3d> &normals_c2,
                       Eigen::Isometry3d T_cw1, Eigen::Isometry3d T_cw2,
@@ -132,7 +147,7 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                       vector<Eigen::Vector3d> &normals_c,
                       vector<int> &points_cam, vector<int> &lines_cam) {
     int num_cameras = cameras.size();
-    const int num_features = 400;
+    const int num_features = 200;
 
     for (int cam_id = 1; cam_id < num_cameras; ++cam_id) {
         const Camera &camera = cameras[cam_id];

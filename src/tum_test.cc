@@ -1,4 +1,5 @@
 #include <Eigen/Dense>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -140,8 +141,48 @@ void loadTUMImage(const string &image_path, const string &time_file,
     }
 }
 
+void saveEurocTraejectory(const string &output_file,
+                          const vector<Eigen::Isometry3d> &poses,
+                          const vector<double> &times) {
+    if (poses.size() != times.size()) {
+        cerr << "Error: poses and times vectors must have the same size."
+             << endl;
+        return;
+    }
+
+    ofstream ofs(output_file);
+    if (!ofs.is_open()) {
+        cerr << "Failed to open output file: " << output_file << endl;
+        return;
+    }
+
+    ofs << fixed << setprecision(10);
+
+    for (size_t i = 0; i < poses.size(); ++i) {
+        const Eigen::Isometry3d &pose = poses[i];
+        double timestamp = times[i];
+
+        Eigen::Vector3d t = pose.translation();
+
+        Eigen::Quaterniond q(pose.linear());
+
+        ofs << (long long)(timestamp * 1e9) << "," << t.x() << "," << t.y()
+            << "," << t.z() << "," << q.x() << "," << q.y() << "," << q.z()
+            << "," << q.w() << "\n";
+    }
+
+    ofs.close();
+
+    cout << "Trajectory saved to " << output_file << endl;
+}
+
 int main() {
     string tum_path = "/home/ljj/dataset/tum/room2/";
+
+    string upnpl_out_file = tum_path + "upnpl_trajectory.csv";
+    string cv_epnp_out_file = tum_path + "cv_epnp_trajectory.csv";
+    string gt_out_file = tum_path + "gt_trajectory.csv";
+
     string cam_file = tum_path + "dso/camchain.yaml";
     string gt_file = tum_path + "mav0/mocap0/data.csv";
 
@@ -188,7 +229,16 @@ int main() {
         t_bc.push_back(cameras[j].Tbc.translation());
     }
 
-    for (int i = 0; i < image_files[0].size() - 1; ++i) {
+    vector<double> times_save;
+    vector<Eigen::Isometry3d> Twb_upnpl;
+    vector<Eigen::Isometry3d> Twb_cv;
+    vector<Eigen::Isometry3d> Twb_gt;
+    double avg_time_upnpl = 0.0;
+    double avg_time_cv = 0.0;
+    for (int i = 2016; i < 2017; ++i) {
+        Twb_gt.push_back(poses_gt[0][i + 1]);
+        times_save.push_back(times[0][i + 1]);
+
         vector<Eigen::Vector3d> points_w;
         vector<Eigen::VectorXd> lines_w;
         vector<Eigen::Vector3d> uv_c;
@@ -201,12 +251,64 @@ int main() {
         Eigen::Matrix3d R_bw;
         Eigen::Vector3d t_bw;
         UPnPL::UPnPL upnpl;
-        upnpl.solveUPnPL(points_w, lines_w, uv_c, normals_c, points_cam,
-                         lines_cam, R_bc, t_bc, R_bw, t_bw);
+        auto start = chrono::high_resolution_clock::now();
+        vector<Eigen::VectorXd> lines_w_tmp = lines_w;
+        vector<Eigen::Vector3d> normals_c_tmp = normals_c;
+        vector<int> lines_cam_tmp = lines_cam;
+        // lines_w.clear();
+        // normals_c.clear();
+        // lines_cam.clear();
+        // for (int i = 0; i < lines_w_tmp.size(); ++i) {
+        //     if (lines_cam_tmp[i] == 1) {
+        //         Eigen::Isometry3d Tbw = Twb_gt.back().inverse();
+        //         Eigen::Vector3d p1_b = Tbw * lines_w_tmp[i].head<3>();
+        //         Eigen::Vector3d p2_b = Tbw * lines_w_tmp[i].tail<3>();
+        //         Eigen::Vector3d p1_c = R_bc[lines_cam_tmp[i]].transpose() *
+        //                                (p1_b - t_bc[lines_cam_tmp[i]]);
+        //         Eigen::Vector3d p2_c = R_bc[lines_cam_tmp[i]].transpose() *
+        //                                (p2_b - t_bc[lines_cam_tmp[i]]);
+        //         Eigen::Vector3d n_c = normals_c_tmp[i];
+        //         n_c.normalize();
+        //         Eigen::Vector3d normals_gt = p1_c.cross(p2_c);
+        //         normals_gt.normalize();
+        //         lines_w.push_back(lines_w_tmp[i]);
+        //         normals_c.push_back(n_c);
+        //         lines_cam.push_back(lines_cam_tmp[i]);
+        //     }
+        // }
+        vector<Eigen::Vector3d> points_w_tmp = points_w;
+        vector<Eigen::Vector3d> uv_c_tmp = uv_c;
+        vector<int> points_cam_tmp = points_cam;
+        // points_w.clear();
+        // uv_c.clear();
+        // points_cam.clear();
+        // for (int i = 0; i < points_w_tmp.size(); ++i) {
+        //     if (points_cam_tmp[i] == 0) {
+        //         Eigen::Isometry3d Tbw = Twb_gt.back().inverse();
+        //         Eigen::Vector3d p_b = Tbw * points_w_tmp[i];
+        //         Eigen::Vector3d p_c = R_bc[0].transpose() * (p_b - t_bc[0]);
+        //         p_c.normalize();
+        //         // cout << "Point " << i << ": " << p_c.transpose() << endl;
+        //         // cout << "uv_C: " << uv_c_tmp[i].transpose() << endl;
+        //
+        //         points_w.push_back(points_w_tmp[i]);
+        //         uv_c.push_back(uv_c_tmp[i].normalized());
+        //         points_cam.push_back(0);
+        //     }
+        // }
+        upnpl.solveUPnPL_EPnPL(points_w, lines_w, uv_c, normals_c, points_cam,
+                               lines_cam, R_bc, t_bc, R_bw, t_bw);
+        auto end = chrono::high_resolution_clock::now();
+
+        chrono::duration<double, std::milli> elapsed =
+            end - start; // Time in milliseconds
+        avg_time_upnpl += elapsed.count();
+
         Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
         T_bw.linear() = R_bw;
         T_bw.translation() = t_bw;
         Eigen::Isometry3d T_wb = T_bw.inverse();
+        Twb_upnpl.push_back(T_wb);
 
         // cv EPnP
         vector<cv::Point3f> object_points;
@@ -217,11 +319,11 @@ int main() {
         cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) << 0, 0, 0, 0, 0);
         cv::Mat rvec, tvec;
 
-        for (int i = 0; i < points_w.size(); ++i) {
-            if (points_cam[i] == 0) {
-                object_points.emplace_back(points_w[i](0), points_w[i](1),
-                                           points_w[i](2));
-                Eigen::Vector3d uv = uv_c[i];
+        for (int i = 0; i < points_w_tmp.size(); ++i) {
+            if (points_cam_tmp[i] == 0) {
+                object_points.emplace_back(
+                    points_w_tmp[i](0), points_w_tmp[i](1), points_w_tmp[i](2));
+                Eigen::Vector3d uv = uv_c_tmp[i];
                 uv /= uv(2);
                 cv::Point2f uv_image;
                 uv_image.x = uv(0) * cameras[0].fx + cameras[0].cx;
@@ -230,8 +332,13 @@ int main() {
             }
         }
 
+        start = chrono::high_resolution_clock::now();
         cv::solvePnP(object_points, image_points, camera_matrix, dist_coeffs,
                      rvec, tvec, false, cv::SOLVEPNP_EPNP);
+        end = chrono::high_resolution_clock::now();
+        elapsed = end - start; // Time in milliseconds
+        avg_time_cv += elapsed.count();
+
         cv::Mat R_cv;
         cv::Rodrigues(rvec, R_cv);
         Eigen::Matrix3d R_cv_eigen = cvMatToEigen(R_cv);
@@ -242,17 +349,32 @@ int main() {
         T_cw.translation() = t_cv_eigen;
         Eigen::Isometry3d T_bw_cv = cameras[0].Tbc * T_cw;
         Eigen::Isometry3d T_wb_cv = T_bw_cv.inverse();
+        Twb_cv.push_back(T_wb_cv);
 
-        // cout << "Pose for image index " << i << ": " << endl;
-        // cout << "points num: " << points_w.size() << endl;
-        // cout << "lines num: " << lines_w.size() << endl;
-        // cout << "opencv EPnP Pose:\n";
-        // cout << "Translation:\n" << T_wb_cv.translation().transpose() <<
-        // endl; cout << "UPnPL Pose:\n"; cout << "Translation:\n" <<
-        // T_wb.translation().transpose() << endl; cout << "Ground truth
-        // Pose:\n"; cout << "Translation:\n"
-        //      << poses_gt[0][i + 1].translation().transpose() << endl;
+        cout << "Processed frame " << i << endl;
+        cout << "opencv EPnP Transformation: "
+             << T_wb_cv.translation().transpose() << endl;
+        cout << "UPnPL Transformation: " << T_wb.translation().transpose()
+             << endl;
+        cout << "Ground Truth Transformation: "
+             << Twb_gt.back().translation().transpose() << endl;
+        Eigen::Matrix3d R_bw_gt = Twb_gt.back().inverse().linear();
+        cout << "gt R_bw: " << R_bw_gt << endl;
+        Eigen::Vector3d caley_gt = rotToCGR(R_bw_gt);
+        cout << "Ground Truth Caley vector: " << caley_gt.transpose() << endl;
+        cout << "tbw: " << Twb_gt.back().inverse().translation().transpose()
+             << endl;
     }
+
+    avg_time_upnpl /= Twb_upnpl.size();
+    avg_time_cv /= Twb_cv.size();
+
+    cout << "Average time for UPnPL: " << avg_time_upnpl << " ms" << endl;
+    cout << "Average time for OpenCV EPnP: " << avg_time_cv << " ms" << endl;
+
+    saveEurocTraejectory(upnpl_out_file, Twb_upnpl, times_save);
+    saveEurocTraejectory(cv_epnp_out_file, Twb_cv, times_save);
+    saveEurocTraejectory(gt_out_file, Twb_gt, times_save);
 
     return 0;
 }
