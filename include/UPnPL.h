@@ -3,12 +3,44 @@
 #include <vector>
 
 #include <Eigen/Dense>
+#include <ceres/ceres.h>
 
 #include <random>
 
 namespace UPnPL {
 
 using namespace std;
+
+struct LambdaCost {
+    LambdaCost(const Eigen::MatrixXd &a, const Eigen::MatrixXd &b, double c)
+        : a_(a), b_(b), c_(c) {}
+
+    template <typename T>
+    bool operator()(T const *const *lambdas, T *residual) const {
+        const T *lambda = lambdas[0];
+        int n = a_.rows();
+
+        T result = T(0.0);
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < n; ++j) {
+                result += lambda[i] * T(a_(i, j)) * lambda[j];
+            }
+        }
+
+        for (int i = 0; i < n; ++i) {
+            result += lambda[i] * T(b_(i));
+        }
+
+        result += T(c_);
+
+        residual[0] = result;
+        return true;
+    }
+
+    Eigen::MatrixXd a_;
+    Eigen::VectorXd b_;
+    double c_;
+};
 
 class UPnPL {
   public:
@@ -43,9 +75,36 @@ class UPnPL {
                       const vector<Eigen::Vector3d> &control_points,
                       vector<double> &alpha);
 
-    void solveN1(const vector<Eigen::Vector3d> &control_points_w,
-                 const Eigen::VectorXd &beta, const Eigen::VectorXd &y,
-                 double &lambda);
+    double solveN1(const vector<Eigen::Vector3d> &control_points_w,
+                   const Eigen::VectorXd &beta, const Eigen::VectorXd &y,
+                   Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
+
+    // double solveN1_reproj(const vector<Eigen::Vector3d> &control_points_w,
+    //                       const Eigen::VectorXd &beta, const Eigen::VectorXd
+    //                       &y, Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
+
+    double solveN2(const vector<Eigen::Vector3d> &control_points_w,
+                   const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
+                   Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
+
+    // double solveN3(const vector<Eigen::Vector3d> &control_points_w,
+    //                const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
+    //                Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
+
+    double solveN4(const vector<Eigen::Vector3d> &control_points_w,
+                   const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
+                   Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
+
+    bool lambdaRefine(const vector<Eigen::MatrixXd> &a,
+                      const vector<Eigen::VectorXd> &b, vector<double> &c,
+                      Eigen::VectorXd &lambda);
+
+    void computePose(const vector<Eigen::Vector3d> &control_points_b,
+                     const vector<double> &alpha, Eigen::Matrix3d &R_bw,
+                     Eigen::Vector3d &t_bw);
+
+    double computeReprojError(const Eigen::Matrix3d &R_bw,
+                              const Eigen::Vector3d &t_bw);
 
     void normalization(const vector<Eigen::Vector3d> &points_w,
                        const vector<Eigen::VectorXd> &lines_w,
@@ -65,6 +124,22 @@ class UPnPL {
         M << 0, -v(2), v(1), v(2), 0, -v(0), -v(1), v(0), 0;
         return M;
     }
+
+  private:
+    int n_, m_; // number of points and lines
+
+    vector<Eigen::Vector3d> points_w_n_;
+    vector<Eigen::VectorXd> lines_w_n_;
+
+    vector<Eigen::Vector3d> uv_b_;
+    vector<Eigen::Vector3d> normals_b_;
+
+    vector<int> points_cam_;
+    vector<int> lines_cam_;
+
+    vector<Eigen::Vector3d> tbc_n_;
+
+    vector<double> alpha_;
 };
 
 } // namespace UPnPL

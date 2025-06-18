@@ -19,16 +19,32 @@ def convert_expression(expr):
     cpp_expr_parts = []
     for term in terms:
         # 例如：'4*A1_4'、'2*A4_1' 或 'u0'
-        if 'A' in term:
-            match = re.match(r'(\d*)\*?A(\d+)_(\d+)', term)
+        if 'a' in term:
+            match = re.match(r'(\d*)\*?a(\d+)_(\d+)_(\d+)', term)
             if match:
-                coeff, row, col = match.groups()
+                coeff, index, row, col = match.groups()
                 row = int(row)
                 col = int(col)
                 row = row - 1  # 转换为0基索引
                 col = col - 1
+                index = int(index) - 1  # 转换为0基索引
                 coeff = coeff if coeff else '1'
-                cpp_expr_parts.append(f"{coeff}*A({row},{col})")
+                cpp_expr_parts.append(f"{coeff}*a[{index}]({row},{col})")
+        elif 'b' in term:
+            match = re.match(r'(\d*)\*?b(\d+)_(\d+)', term)
+            if match:
+                coeff, index, col = match.groups()
+                index = int(index) - 1
+                col = int(col) - 1
+                coeff = coeff if coeff else '1'
+                cpp_expr_parts.append(f"{coeff}*b[{index}]({col})")
+        elif 'c' in term:
+            match = re.match(r'(\d*)\*?c(\d+)', term)
+            if match:
+                coeff, index = match.groups()
+                index = int(index) - 1
+                coeff = coeff if coeff else '1'
+                cpp_expr_parts.append(f"{coeff}*c[{index}]")
         elif 'u' in term:
             match = re.match(r'u(\d)', term)
             if match:
@@ -42,7 +58,7 @@ def generate_cpp_function(txt_path):
         lines = f.readlines()
 
     cpp_lines = [
-        "#pragma once\n\n#include <Eigen/Dense>\n\nvoid constructM(const Eigen::Matrix<double, 10, 10> &A, const Eigen::Vector4d& u, Eigen::Matrix<double, 120, 120>& M) {"
+        "#pragma once\n\n#include <vector>\n#include <Eigen/Dense>\n\nvoid constructM_N4(const std::vector<Eigen::MatrixXd> &a, const std::vector<Eigen::VectorXd> &b, const std::vector<double> &c, const Eigen::VectorXd& u, Eigen::MatrixXd& M) {"
     ]
 
     for line in lines:
@@ -59,8 +75,8 @@ def generate_cpp_function(txt_path):
 
 
 # 写入 C++ 文件
-cpp_code = generate_cpp_function("nonzero_elements_output_N3.txt")
-with open("include/constructM_N3.h", "w") as f:
+cpp_code = generate_cpp_function("nonzero_elements_output_N4.txt")
+with open("include/constructM_N4.h", "w") as f:
     f.write(cpp_code)
 
 print("C++ function written to constructM.cpp")

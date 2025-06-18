@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Eigen/Dense>
 
 #include <opencv2/calib3d.hpp>
@@ -48,6 +50,26 @@ struct Camera {
 
         cv::fisheye::initUndistortRectifyMap(K, D, R, newK, image_size_cv,
                                              CV_32FC1, map1, map2);
+        need_rictified = true;
+    }
+
+    void getRecitifiedPinholeCamera() {
+        cv::Size image_size_cv(image_size[0], image_size[1]);
+        cv::Mat K = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+        cv::Mat D = cv::Mat(distortion_coeffs);
+
+        cv::Mat newK;
+        double alpha = 1.0;
+
+        newK = cv::getOptimalNewCameraMatrix(K, D, image_size_cv, alpha,
+                                             image_size_cv);
+
+        cv::initUndistortRectifyMap(K, distortion_coeffs, cv::Mat(), newK,
+                                    image_size_cv, CV_32FC1, map1, map2);
+        fx = newK.at<double>(0, 0);
+        fy = newK.at<double>(1, 1);
+        cx = newK.at<double>(0, 2);
+        cy = newK.at<double>(1, 2);
         need_rictified = true;
     }
 };

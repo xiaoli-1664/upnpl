@@ -3,8 +3,8 @@ project(UPnPL)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -flto")
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -flto")
+set(CMAKE_BUILD_TYPE Release)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,13 +18,20 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 find_package(yaml-cpp REQUIRED)
 include_directories(${YAML_CPP_INCLUDE_DIRS})
 
+find_package(Ceres REQUIRED)
+include_directories(${CERES_INCLUDE_DIRS})
+
 add_library(UPnPL src/UPnPL.cc)
+target_link_libraries(UPnPL ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
 add_executable(sim_test src/sim_test.cc)
-target_link_libraries(sim_test UPnPL ${OpenCV_LIBS})
+target_link_libraries(sim_test UPnPL)
 
 add_executable(vgg_real_test src/vgg_real_test.cc)
-target_link_libraries(vgg_real_test UPnPL ${OpenCV_LIBS})
+target_link_libraries(vgg_real_test UPnPL)
 
 add_executable(tum_test src/tum_test.cc)
-target_link_libraries(tum_test UPnPL ${OpenCV_LIBS} yaml-cpp)
+target_link_libraries(tum_test UPnPL yaml-cpp)
+
+add_executable(euroc_test src/euroc_test.cc)
+target_link_libraries(euroc_test UPnPL yaml-cpp)

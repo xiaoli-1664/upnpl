@@ -19,10 +19,10 @@ struct Camera {
 
 struct SimConfig {
     int num_cameras = 1;
-    int num_points = 0;
-    int num_lines = 50;
-    double noise_std = 0.01;
-    double outlier_ratio = 0.00000001;
+    int num_points = 6;
+    int num_lines = 0;
+    double noise_std = 1e-6;
+    double outlier_ratio = 1e-12;
     double outlier_std = 100;
 };
 
@@ -80,11 +80,10 @@ int main() {
     vector<Vector3d> tbc(config.num_cameras);
     for (int i = 0; i < config.num_cameras; ++i) {
         double angle = i * 2 * M_PI / config.num_cameras;
-        angle = M_PI / 3;
         cameras[i].R_bc = AngleAxisd(angle, axis_bc).toRotationMatrix();
-        // cameras[i].R_bc.setIdentity(); // Set to identity for simplicity
+        cameras[i].R_bc.setIdentity(); // Set to identity for simplicity
         cameras[i].t_bc = Vector3d(0.2 * cos(angle), 0, 0.2 * sin(angle));
-        // cameras[i].t_bc.setZero(); // Set to zero for simplicity
+        cameras[i].t_bc.setZero(); // Set to zero for simplicity
         Rbc[i] = cameras[i].R_bc;
         tbc[i] = cameras[i].t_bc;
         cameras[i].fx = 1000;
