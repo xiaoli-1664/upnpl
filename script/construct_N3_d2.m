@@ -3,66 +3,74 @@
 clear;
 clc;
 
-syms r [4 1] real
-syms u0 u1 u2 u3 u4 real
-syms a1_ a2_ a3_ a4_ [4 4] real
-syms b1_ b2_ b3_ b4_ [1 4] real
-syms c1 c2 c3 c4 real
+syms r [3 1] real
+syms u0 u1 u2 u3 real
+syms a1_ a2_ a3_ [3 3] real
+syms b1_ b2_ b3_ [1 3] real
+syms c1 c2 c3 real
 
 %% Step 2: 定义 f0, f1, f2, f3
-f0 = u0 + u1*r1 + u2*r2 + u3*r3 + u4*r4;
+f0 = u0 + u1*r1 + u2*r2 + u3*r3;
 
-f1 = expand(r'*a1_*r);
+f1 = expand(r'*a1_*r + b1_*r + c1);
+f2 = expand(r'*a2_*r + b2_*r + c2);
+f3 = expand(r'*a3_*r + b3_*r + c3);
 
 %% Step 3: 生成所有 total degree 最高为 7 的 monomials（预期120个）
 % --- 修正开始 (Step 3) ---
 monos = sym([]); % 初始化为符号列向量
-for d_total = 0:2 % 总次数从 0 到 7
+for d_total = 0:4 % 总次数从 0 到 7
   for i = 0:d_total
     for j = 0:(d_total-i)
-      k = d_total - i - j;
-      monos(end+1,1) = r1^i;
+        k = d_total - i - j;
+        monos(end+1,1) = r1^i*r2^j*r3^k;
     end
   end
 end
 monos = unique(monos);  % 移除重复项
-if length(monos) ~= 3
+if length(monos) ~= 35
     warning('生成的单项式数量不是120，请检查逻辑。当前数量: %d', length(monos));
 end
 % --- 修正结束 (Step 3) ---
 
 %% Step 4: 构建 S0, S1, S2, S3（不重叠）
 % --- 修正开始 (Step 4) ---
-S1 = sym([]); S0 = sym([]);
+S3 = sym([]); S2 = sym([]); S1 = sym([]); S0 = sym([]);
 for i = 1:length(monos)
     mn = monos(i);
+    deg_r3 = feval(symengine, 'degree', mn, r3); % 获取 mn 关于 r3 的次数
+    deg_r2 = feval(symengine, 'degree', mn, r2); % 获取 mn 关于 r2 的次数
     deg_r1 = feval(symengine, 'degree', mn, r1); % 获取 mn 关于 r1 的次数
 
-    if deg_r1 >= 2
-        S1(end+1) = mn; % S1 中的元素 r1 次数 >= 3
+    if deg_r3 >= 2
+        S3(end+1) = mn;
+    elseif deg_r2 >= 2
+        S2(end+1) = mn; % S2 中的元素 r2 次数 >= 3 (且不满足S3条件)
+    elseif deg_r1 >= 2
+        S1(end+1) = mn; % S1 中的元素 r1 次数 >= 3 (且不满足S3,S2条件)
     else
         S0(end+1) = mn; % 其他情况
     end
 end
 % 校验分组是否完整
-if length(S0) + length(S1) ~= length(monos)
-    warning('S0-S1 分组后的单项式总数与 monos 数量不符，请检查 Step 4 逻辑。');
+if length(S0) + length(S1) + length(S2) + length(S3) ~= length(monos)
+    warning('S0-S3 分组后的单项式总数与 monos 数量不符，请检查 Step 4 逻辑。');
 end
 % --- 修正结束 (Step 4) ---
 
 %% Step 5: 构建 A 矩阵，并按 S0, S1, S2, S3 顺序拼接 monomial basis
-all_monomials = [S0, S1].'; % S_i 是行向量，拼接后转置为列向量以匹配常见的基向量形式
+all_monomials = [S0, S1, S2, S3].'; % S_i 是行向量，拼接后转置为列向量以匹配常见的基向量形式
                                   % 或者保持 all_monomials 为行向量，coeffs_to_row 中对应处理
                                   % 这里假设 all_monomials 是一个包含120个单项式的 (行或列) 向量
                                   % 如果 S_i(end+1) = mn; 使S_i为行向量,则 [S0,S1,S2,S3] 是行向量拼接
                                   % MATLAB 的 ismember 和 find 对于行向量和列向量基础上的元素查找行为一致
 
-if length(all_monomials) ~= 3 && length(monos) == 3 % 确保all_monomials也是120，通常 S_i 为行，拼接后仍为行
+if length(all_monomials) ~= 35 && length(monos) == 35 % 确保all_monomials也是120，通常 S_i 为行，拼接后仍为行
     all_monomials = all_monomials.'; % 如果之前S_i是列向量，拼接后就是多行，就不需要转置
                                      % 鉴于 S_k(end+1)=mn 的用法, S_k 是行向量, all_monomials 也是行向量
                                      % coeffs_to_row 的 basis 是行向量也没问题
 end
-if length(all_monomials) ~= 3
+if length(all_monomials) ~= 35
      error('基础单项式 all_monomials 的数量不是120 (%d), 请检查Step3和Step4的逻辑', length(all_monomials));
 end
 
@@ -71,16 +79,26 @@ row_idx = 1; % 使用不同的变量名避免与函数内的row冲突
 
 for s_mono = S0 % 迭代S0中的每个单项式 (转置为列向量迭代，或直接 S0 如果S0是行向量)
     poly = expand(s_mono * f0);
-    M(row_idx, :) = coeffs_to_row(poly, all_monomials,[r1]);
+    M(row_idx, :) = coeffs_to_row(poly, all_monomials,[r1,r2,r3]);
     row_idx = row_idx + 1;
 end
 for s_mono = S1
     poly = expand((s_mono / r1^2) * f1); % s_mono 必须能被 r1^3 整除 (Step 4的逻辑保证)
-    M(row_idx, :) = coeffs_to_row(poly, all_monomials,[r1]);
+    M(row_idx, :) = coeffs_to_row(poly, all_monomials,[r1,r2,r3]);
+    row_idx = row_idx + 1;
+end
+for s_mono = S2
+    poly = expand((s_mono / r2^2) * f2);
+    M(row_idx, :) = coeffs_to_row(poly, all_monomials,[r1,r2,r3]);
+    row_idx = row_idx + 1;
+end
+for s_mono = S3
+    poly = expand((s_mono / r3^2) * f3);
+    M(row_idx, :) = coeffs_to_row(poly, all_monomials,[r1,r2,r3]);
     row_idx = row_idx + 1;
 end
 
-filename = 'M_sym_N1.txt';
+filename = 'M_sym_N3.txt';
 fid = fopen(filename, 'w');
 
 % 假设 M 是您的符号矩阵

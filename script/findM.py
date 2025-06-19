@@ -25,8 +25,8 @@ def find_nonzero_elements(input_filepath, output_filepath):
 
 # --- 使用示例 ---
 # 请将下面的文件名替换为您实际的输入和输出文件名
-input_file = "M_sym_N4.txt"  # 您的稀疏矩阵文件名
-output_file = "nonzero_elements_output_N4.txt"  # 您希望保存结果的文件名
+input_file = "M_sym_N3.txt"  # 您的稀疏矩阵文件名
+output_file = "nonzero_elements_output_N3.txt"  # 您希望保存结果的文件名
 
 # 调用函数进行处理
 find_nonzero_elements(input_file, output_file)

@@ -35,3 +35,4 @@ target_link_libraries(tum_test UPnPL yaml-cpp)
 
 add_executable(euroc_test src/euroc_test.cc)
 target_link_libraries(euroc_test UPnPL yaml-cpp)
+

@@ -44,7 +44,7 @@ struct LambdaCost {
 
 class UPnPL {
   public:
-    UPnPL() {}
+    UPnPL(bool is_normalized = true) : is_normalized_(is_normalized) {}
 
     void solveUPnPL_DLS(const vector<Eigen::Vector3d> &points_w,
                         const vector<Eigen::VectorXd> &lines_w,
@@ -87,9 +87,9 @@ class UPnPL {
                    const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
                    Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
 
-    // double solveN3(const vector<Eigen::Vector3d> &control_points_w,
-    //                const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
-    //                Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
+    double solveN3(const vector<Eigen::Vector3d> &control_points_w,
+                   const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
+                   Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw);
 
     double solveN4(const vector<Eigen::Vector3d> &control_points_w,
                    const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
@@ -127,6 +127,7 @@ class UPnPL {
 
   private:
     int n_, m_; // number of points and lines
+    bool is_normalized_ = true;
 
     vector<Eigen::Vector3d> points_w_n_;
     vector<Eigen::VectorXd> lines_w_n_;
