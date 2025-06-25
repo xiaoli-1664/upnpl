@@ -218,9 +218,20 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
             }
             Eigen::Vector3d pt_w1 = T_bw_gt_.inverse() * line_b.p1;
             Eigen::Vector3d pt_w2 = T_bw_gt_.inverse() * line_b.p2;
+            Eigen::Vector3d v = (pt_w2 - pt_w1).normalized();
+            random_device rd;
+            mt19937 gen(rd());
+            uniform_real_distribution<> dist(-10, 10);
+            double t1 = dist(gen);
+            double t2 = dist(gen);
+            while (abs(t1 - t2) < 1e-6) {
+                t2 = dist(gen);
+            }
+            Eigen::Vector3d pt_w_1 = pt_w1 + t1 * v;
+            Eigen::Vector3d pt_w_2 = pt_w2 + t2 * v;
             Eigen::VectorXd line(6);
-            line.head<3>() = pt_w1;
-            line.tail<3>() = pt_w2;
+            line.head<3>() = pt_w_1;
+            line.tail<3>() = pt_w_2;
             lines_w.push_back(line);
 
             Eigen::Vector3d pt_c1 = Unproject(uv1, cam);
@@ -307,11 +318,8 @@ Eigen::Isometry3d myUPnPL(const vector<Eigen::Vector3d> &points_w_tmp,
 }
 
 Eigen::Isometry3d cv_EPnP(const vector<Eigen::Vector3d> &points_w,
-                          const vector<Eigen::VectorXd> &lines_w,
                           const vector<Eigen::Vector3d> &uv_c,
-                          const vector<Eigen::Vector3d> &normals_c,
                           const vector<int> &points_cam,
-                          const vector<int> &lines_cam,
                           const vector<Camera> &cameras) {
     // Prepare OpenCV data structures
     vector<cv::Point3f> object_points;
@@ -364,11 +372,8 @@ Eigen::Isometry3d cv_EPnP(const vector<Eigen::Vector3d> &points_w,
 }
 
 Eigen::Isometry3d opengv_UPnP(const vector<Eigen::Vector3d> &points_w,
-                              const vector<Eigen::VectorXd> &lines_w,
                               const vector<Eigen::Vector3d> &uv_c,
-                              const vector<Eigen::Vector3d> &normals_c,
                               const vector<int> &points_cam,
-                              const vector<int> &lines_cam,
                               const vector<Camera> &cameras) {
     bearingVectors_t bearingVectors;
     points_t points;

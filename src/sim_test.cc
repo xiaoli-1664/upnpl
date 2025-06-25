@@ -86,14 +86,12 @@ int main(int argc, char **argv) {
         Tbw_upnpl_1cam.push_back(T_bw_est_isometry);
 
         Eigen::Isometry3d T_bw_upnp;
-        T_bw_upnp = opengv_UPnP(points_w, lines_w, uv_c, normals_c, points_cam,
-                                lines_cam, simulator.cameras_);
+        T_bw_upnp = opengv_UPnP(points_w, uv_c, points_cam, simulator.cameras_);
         Tbw_upnp.push_back(T_bw_upnp);
 
         // Use OpenCV's EPnP to verify the results
         Eigen::Isometry3d T_bw_epnp =
-            cv_EPnP(points_w, lines_w, uv_c, normals_c, points_cam, lines_cam,
-                    simulator.cameras_);
+            cv_EPnP(points_w, uv_c, points_cam, simulator.cameras_);
         Tbw_epnp.push_back(T_bw_epnp);
 
         if (save)
