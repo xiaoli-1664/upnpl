@@ -58,7 +58,7 @@ def generate_cpp_function(txt_path):
         lines = f.readlines()
 
     cpp_lines = [
-        "#pragma once\n\n#include <vector>\n#include <Eigen/Dense>\n\nvoid constructM_N3(const std::vector<Eigen::MatrixXd> &a, const std::vector<Eigen::VectorXd> &b, const std::vector<double> &c, const Eigen::VectorXd& u, Eigen::MatrixXd& M) {"
+        "#pragma once\n\n#include <vector>\n#include <Eigen/Dense>\n\nvoid constructM_N2(const std::vector<Eigen::MatrixXd> &a, const std::vector<Eigen::VectorXd> &b, const std::vector<double> &c, const Eigen::VectorXd& u, Eigen::MatrixXd& M) {"
     ]
 
     for line in lines:
@@ -75,8 +75,8 @@ def generate_cpp_function(txt_path):
 
 
 # 写入 C++ 文件
-cpp_code = generate_cpp_function("nonzero_elements_output_N3.txt")
-with open("include/constructM_N3.h", "w") as f:
+cpp_code = generate_cpp_function("nonzero_elements_output_N2_d2.txt")
+with open("../include/constructM_N2_d2.h", "w") as f:
     f.write(cpp_code)
 
 print("C++ function written to constructM.cpp")

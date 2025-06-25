@@ -21,11 +21,16 @@ include_directories(${YAML_CPP_INCLUDE_DIRS})
 find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 
+set(OPENGV_PATH /home/ljj/source_code/opengv)
+
+include_directories(${OPENGV_PATH}/include)
+link_directories(${OPENGV_PATH}/build/lib)
+
 add_library(UPnPL src/UPnPL.cc)
 target_link_libraries(UPnPL ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
 add_executable(sim_test src/sim_test.cc)
-target_link_libraries(sim_test UPnPL)
+target_link_libraries(sim_test UPnPL opengv)
 
 add_executable(vgg_real_test src/vgg_real_test.cc)
 target_link_libraries(vgg_real_test UPnPL)

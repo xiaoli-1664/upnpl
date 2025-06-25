@@ -46,6 +46,15 @@ class UPnPL {
   public:
     UPnPL(bool is_normalized = true) : is_normalized_(is_normalized) {}
 
+    void solveMain(const vector<Eigen::Vector3d> &points_w,
+                   const vector<Eigen::VectorXd> &lines_w,
+                   const vector<Eigen::Vector3d> &uv_c,
+                   const vector<Eigen::VectorXd> &lines_c,
+                   const vector<int> &points_cam, const vector<int> &lines_cam,
+                   const vector<Eigen::Matrix3d> &Rbc,
+                   const vector<Eigen::Vector3d> &tbc, Eigen::Matrix3d &R_bw,
+                   Eigen::Vector3d &t_bw);
+
     void solveUPnPL_DLS(const vector<Eigen::Vector3d> &points_w,
                         const vector<Eigen::VectorXd> &lines_w,
                         const vector<Eigen::Vector3d> &uv_c,
@@ -103,7 +112,19 @@ class UPnPL {
                      const vector<double> &alpha, Eigen::Matrix3d &R_bw,
                      Eigen::Vector3d &t_bw);
 
+    void computePose(const vector<int> &index,
+                     const vector<Eigen::Vector3d> &control_points_b,
+                     const vector<double> &alpha, Eigen::Matrix3d &R_bw,
+                     Eigen::Vector3d &t_bw);
+
+    void computePose(const vector<Eigen::Vector3d> &control_points_b,
+                     Eigen::Matrix3d &R_bw, Eigen::Vector3d &t_bw);
+
     double computeReprojError(const Eigen::Matrix3d &R_bw,
+                              const Eigen::Vector3d &t_bw);
+
+    double computeReprojError(const vector<int> &index,
+                              const Eigen::Matrix3d &R_bw,
                               const Eigen::Vector3d &t_bw);
 
     void normalization(const vector<Eigen::Vector3d> &points_w,
@@ -112,8 +133,24 @@ class UPnPL {
                        vector<Eigen::VectorXd> &lines_w_n, double &scale,
                        Eigen::Vector3d &center, bool normalize = false);
 
+    Eigen::Vector2d computeCorrectness(const Eigen::Vector2d &p,
+                                       const Eigen::Vector2d &pd,
+                                       const Eigen::Vector2d &v,
+                                       const Eigen::Vector3d &line_param,
+                                       double d);
+
+    Eigen::Vector3d backProjPointToLine(const Eigen::Vector2d &x,
+                                        const Eigen::Vector3d &X,
+                                        const Eigen::Vector3d &v);
+
     double pointLineDistance(const Eigen::Vector3d &x, const Eigen::Vector3d &a,
                              const Eigen::Vector3d &b);
+
+    double pointLineDistance2D(const Eigen::Vector2d &x,
+                               const Eigen::Vector3d &line_param) {
+        double a = line_param(0), b = line_param(1), c = line_param(2);
+        return fabs(a * x(0) + b * x(1) + c) / sqrt(a * a + b * b);
+    }
 
     Eigen::Matrix<double, 3, 9> phi(const Eigen::Vector3d &p);
 
@@ -131,6 +168,7 @@ class UPnPL {
 
     vector<Eigen::Vector3d> points_w_n_;
     vector<Eigen::VectorXd> lines_w_n_;
+    vector<Eigen::Vector3d> control_points_w_;
 
     vector<Eigen::Vector3d> uv_b_;
     vector<Eigen::Vector3d> normals_b_;
@@ -141,6 +179,8 @@ class UPnPL {
     vector<Eigen::Vector3d> tbc_n_;
 
     vector<double> alpha_;
+
+    int num_error_ = 20;
 };
 
 } // namespace UPnPL

@@ -1,12 +1,88 @@
 #include "UPnPL.h"
 #include "constructM.h"
-#include "constructM_N2.h"
+// #include "constructM_N2.h"
+#include "constructM_N2_d2.h"
 #include "constructM_N3.h"
 #include "constructM_N4.h"
 #include <chrono>
 #include <iostream>
 
 namespace UPnPL {
+
+void UPnPL::solveMain(const vector<Eigen::Vector3d> &points_w,
+                      const vector<Eigen::VectorXd> &lines_w,
+                      const vector<Eigen::Vector3d> &uv_c,
+                      const vector<Eigen::VectorXd> &lines_c,
+                      const vector<int> &points_cam,
+                      const vector<int> &lines_cam,
+                      const vector<Eigen::Matrix3d> &Rbc,
+                      const vector<Eigen::Vector3d> &tbc, Eigen::Matrix3d &R_bw,
+                      Eigen::Vector3d &t_bw) {
+    vector<Eigen::Vector3d> normals_c(lines_c.size());
+    for (size_t i = 0; i < lines_c.size(); ++i) {
+        Eigen::Vector3d line_start = lines_c[i].head<3>();
+        Eigen::Vector3d line_end = lines_c[i].tail<3>();
+        normals_c[i] = (line_start.cross(line_end));
+    }
+    solveUPnPL_EPnPL(points_w, lines_w, uv_c, normals_c, points_cam, lines_cam,
+                     Rbc, tbc, R_bw, t_bw);
+
+    if (!is_normalized_)
+        return;
+
+    is_normalized_ = false;
+
+    vector<Eigen::VectorXd> lines_w_corrected(lines_w.size(),
+                                              Eigen::VectorXd::Zero(6));
+    for (int i = 0; i < lines_w.size(); ++i) {
+        int cam = lines_cam[i];
+        Eigen::Vector3d Xs_w = lines_w[i].head<3>();
+        Eigen::Vector3d Xe_w = lines_w[i].tail<3>();
+        Eigen::Vector3d Xs_c_proj =
+            Rbc[cam].transpose() * (R_bw * Xs_w + t_bw - tbc[cam]);
+        Eigen::Vector3d Xe_c_proj =
+            Rbc[cam].transpose() * (R_bw * Xe_w + t_bw - tbc[cam]);
+
+        Eigen::Vector3d Xc = Xs_c_proj;
+        Eigen::Vector3d V = (Xe_c_proj - Xs_c_proj).normalized();
+
+        Xs_c_proj /= Xs_c_proj(2);
+        Xe_c_proj /= Xe_c_proj(2);
+        Eigen::Vector3d line_param_proj = Xs_c_proj.cross(Xe_c_proj);
+
+        Eigen::Vector2d Xs_c_proj_plane = Xs_c_proj.head<2>();
+        Eigen::Vector2d Xe_c_proj_plane = Xe_c_proj.head<2>();
+        Eigen::Vector2d v = (Xe_c_proj_plane - Xs_c_proj_plane).normalized();
+
+        Eigen::Vector3d Xs_c = lines_c[i].head<3>();
+        Eigen::Vector3d Xe_c = lines_c[i].tail<3>();
+        Xs_c /= Xs_c(2);
+        Xe_c /= Xe_c(2);
+        Eigen::Vector3d line_param = Xs_c.cross(Xe_c);
+
+        Eigen::Vector2d Xs_c_plane = Xs_c.head<2>();
+        Eigen::Vector2d Xe_c_plane = Xe_c.head<2>();
+        double ds = pointLineDistance2D(Xs_c_plane, line_param_proj);
+        double de = pointLineDistance2D(Xe_c_plane, line_param_proj);
+
+        Xs_c_proj_plane =
+            computeCorrectness(Xs_c_proj_plane, Xs_c_plane, v, line_param, ds);
+        Xe_c_proj_plane =
+            computeCorrectness(Xe_c_proj_plane, Xe_c_plane, v, line_param, de);
+
+        lines_w_corrected[i].head<3>() =
+            R_bw.transpose() *
+            (Rbc[cam] * backProjPointToLine(Xs_c_proj_plane, Xc, V) + tbc[cam] -
+             t_bw);
+        lines_w_corrected[i].tail<3>() =
+            R_bw.transpose() *
+            (Rbc[cam] * backProjPointToLine(Xe_c_proj_plane, Xc, V) + tbc[cam] -
+             t_bw);
+    }
+
+    solveUPnPL_EPnPL(points_w, lines_w_corrected, uv_c, normals_c, points_cam,
+                     lines_cam, Rbc, tbc, R_bw, t_bw);
+}
 
 void UPnPL::solveUPnPL_DLS(const vector<Eigen::Vector3d> &points_w,
                            const vector<Eigen::VectorXd> &lines_w,
@@ -21,7 +97,7 @@ void UPnPL::solveUPnPL_DLS(const vector<Eigen::Vector3d> &points_w,
     // 计算出来的error 非常大，之后尝试下使用真值计算误差，看看error多少
     // 仿真实验发现外点(误差大)对平移影响很大
     // 当有外点且旋转caley参数较大时，error就比较大，由于设定的error和caley的模长有关，因此结果偏向于模长更小的caley
-    // 上述似乎是DLS方法不可避免的缺陷？或者说是caley参数化的问题，但用四元数参数化又会增加变量和约束
+    // 上述似乎是caley参数化的奇异性问题，但用四元数参数化又会增加变量和约束
     Eigen::Vector3d true_r;
     // true_r << 0.189469, 0.189469, 0;
     // true_r << 0, 0, 0.267949;
@@ -310,9 +386,9 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
         //      << endl;
     }
 
-    vector<Eigen::Vector3d> control_points_w;
-    chooseControlPoints(points_w_n_, lines_w_n_, control_points_w);
-    computeAlpha(points_w_n_, lines_w_n_, control_points_w, alpha_);
+    control_points_w_.resize(4);
+    chooseControlPoints(points_w_n_, lines_w_n_, control_points_w_);
+    computeAlpha(points_w_n_, lines_w_n_, control_points_w_, alpha_);
 
     // vector<Eigen::Vector3d> control_points_b_true(4);
     // for (int i = 0; i < 4; ++i) {
@@ -327,6 +403,14 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
         Eigen::Vector3d p1 = lines_w_n_[i].head<3>();
         Eigen::Vector3d p2 = lines_w_n_[i].tail<3>();
 
+        // Eigen::MatrixXd Ai(1, 12);
+        // Ai << (alpha_[i * 8 + 0] - alpha_[i * 8 + 4]) *
+        //           normals_b_[i].transpose(),
+        //     (alpha_[i * 8 + 1] - alpha_[i * 8 + 5]) *
+        //     normals_b_[i].transpose(), (alpha_[i * 8 + 2] - alpha_[i * 8 +
+        //     6]) * normals_b_[i].transpose(), (alpha_[i * 8 + 3] - alpha_[i *
+        //     8 + 7]) * normals_b_[i].transpose();
+
         Eigen::MatrixXd Ai(2, 12);
         Ai << alpha_[i * 8 + 0] * normals_b_[i].transpose(),
             alpha_[i * 8 + 1] * normals_b_[i].transpose(),
@@ -340,6 +424,8 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
         Eigen::Vector2d bi;
         bi << normals_b_[i].dot(tbc_n_[lines_cam[i]]),
             normals_b_[i].dot(tbc_n_[lines_cam[i]]);
+
+        // double bi = 0;
 
         AtA += Ai.transpose() * Ai;
         y += Ai.transpose() * bi;
@@ -367,7 +453,7 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
 
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(AtA);
     if (es.info() != Eigen::Success) {
-        cerr << "Eigen decomposition failed." << endl;
+        cerr << "Eigen decomposition failed AtA." << endl;
         return;
     }
 
@@ -405,19 +491,21 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
     //     computeReprojError(R_N0, t_N0); // compute reprojection error
     // cout << "error_N0: " << error_N0 << endl;
 
-    double error2 = solveN2(control_points_w, betas_N2, y, R_N2, t_N2);
+    double error2 = numeric_limits<double>::max();
+    error2 = solveN2(control_points_w_, betas_N2, y, R_N2, t_N2);
     // cout << "error2: " << error2 << endl;
 
-    double error1 =
-        solveN1(control_points_w, eigenvectors.col(0), y, R_N1, t_N1);
+    double error1 = numeric_limits<double>::max();
+    error1 = solveN1(control_points_w_, eigenvectors.col(0), y, R_N1, t_N1);
     // cout << "error: " << error1 << endl;
 
-    double error3 = solveN3(control_points_w, betas_N3, y, R_N3, t_N3);
+    double error3 = numeric_limits<double>::max();
+    error3 = solveN3(control_points_w_, betas_N3, y, R_N3, t_N3);
     // cout << "error3: " << error3 << endl;
 
     double error4 = numeric_limits<double>::max();
     // if (eigenvalues(3) < 1)
-    error4 = solveN4(control_points_w, betas_N4, y, R_N4, t_N4);
+    error4 = solveN4(control_points_w_, betas_N4, y, R_N4, t_N4);
     // cout << "error4: " << error4 << endl;
 
     // select min error
@@ -441,7 +529,7 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
 double UPnPL::solveN1(const vector<Eigen::Vector3d> &control_points_w,
                       const Eigen::VectorXd &beta, const Eigen::VectorXd &y,
                       Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw) {
-    double lambda;
+    Eigen::VectorXd lambdas(1), lambdas_tmp(1);
     Eigen::Matrix3d H = Eigen::Matrix3d::Zero();
 
     Eigen::MatrixXd Iij;
@@ -495,9 +583,18 @@ double UPnPL::solveN1(const vector<Eigen::Vector3d> &control_points_w,
 
     Eigen::EigenSolver<Eigen::Matrix3d> es(M0);
     if (es.info() != Eigen::Success) {
-        cerr << "Eigen decomposition failed." << endl;
+        // cerr << "Eigen decomposition failed." << endl;
         return numeric_limits<double>::max();
     }
+
+    int total = m_ + n_;
+    vector<int> index(total);
+    iota(index.begin(), index.end(), 0); // Fill index with 0, 1, ..., total-1
+
+    random_device rd;
+    mt19937 g(rd());
+    shuffle(index.begin(), index.end(), g); // Shuffle the indices
+    index.resize(min(total, num_error_));
 
     Eigen::MatrixXcd V = es.eigenvectors();
     Eigen::Matrix3d Rbw_tmp;
@@ -512,67 +609,152 @@ double UPnPL::solveN1(const vector<Eigen::Vector3d> &control_points_w,
             continue; // Skip if the first element is zero
         }
         Vk /= Vk(0); // Normalize the first element to 1
-        if (Vk(1).imag() == 0.0) {
-            // cout << "Vk: " << Vk.transpose() << endl;
+        if (Vk(1).imag() < 1e-3) {
+            lambdas_tmp(0) = Vk(1).real();
 
-            Eigen::Vector3d r;
-            r << Vk(0).real(), Vk(1).real(), Vk(2).real();
-
-            lambda = r(1);
-            Eigen::VectorXd lambdas(1);
-            lambdas << lambda;
-            if (lambdaRefine(as, bs, cs, lambdas))
-                lambda = lambdas(0);
-            // cout << "lambda: " << lambda << endl;
-
-            y1 = y + lambda * beta;
+            y1 = y + lambdas_tmp(0) * beta;
 
             control_points_b[0] << y1(0), y1(1), y1(2);
             control_points_b[1] << y1(3), y1(4), y1(5);
             control_points_b[2] << y1(6), y1(7), y1(8);
             control_points_b[3] << y1(9), y1(10), y1(11);
 
-            computePose(control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            // computePose(index, control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            computePose(control_points_b, Rbw_tmp, tbw_tmp);
 
-            // double error1 = 0.0;
-            // for (int j = 0; j < n_; ++j) {
-            //     uv_b_[j].normalize();
-            //     Eigen::Matrix3d Pi = Eigen::Matrix3d::Identity() -
-            //                          uv_b_[j] * uv_b_[j].transpose();
-            //     Eigen::Vector3d point_b = Eigen::Vector3d::Zero();
-            //     for (int k = 0; k < 4; ++k) {
-            //         point_b += alpha_[m_ * 8 + j * 4 + k] *
-            //         control_points_b[k];
-            //     }
-            //     error1 +=
-            //         (Pi * (point_b - tbc_n_[points_cam_[j]])).squaredNorm();
-            // }
-            // cout << "Reprojection error: " << error1 << endl;
-
-            double error = computeReprojError(Rbw_tmp, tbw_tmp);
+            double error = computeReprojError(index, Rbw_tmp, tbw_tmp);
             // cout << "error: " << error << endl;
             if (error < min_error) {
                 min_error = error;
-                Rbw = Rbw_tmp;
-                tbw = tbw_tmp;
-                lambda = lambda;
+                // Rbw = Rbw_tmp;
+                // tbw = tbw_tmp;
+                lambdas = lambdas_tmp;
             }
         }
     }
 
-    return min_error;
+    lambdas_tmp = lambdas;
+    if (lambdaRefine(as, bs, cs, lambdas_tmp)) {
+        lambdas = lambdas_tmp;
+    }
+
+    y1 = y + lambdas(0) * beta;
+    control_points_b[0] << y1(0), y1(1), y1(2);
+    control_points_b[1] << y1(3), y1(4), y1(5);
+    control_points_b[2] << y1(6), y1(7), y1(8);
+    control_points_b[3] << y1(9), y1(10), y1(11);
+
+    computePose(control_points_b, alpha_, Rbw, tbw);
+
+    return computeReprojError(Rbw, tbw);
 }
+
+// double UPnPL::solveN2(const vector<Eigen::Vector3d> &control_points_w,
+//                       const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
+//                       Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw) {
+//     Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Zero();
+//     Eigen::VectorXd lambdas(2), lambdas_tmp(2);
+//
+//     Eigen::MatrixXd Iij;
+//     vector<Eigen::MatrixXd> as;
+//     vector<Eigen::VectorXd> bs;
+//     vector<double> cs;
+//
+//     for (int i = 0; i < 4; ++i) {
+//         for (int j = i + 1; j < 4; ++j) {
+//             Iij = Eigen::MatrixXd::Zero(3, 12);
+//             Iij.block<3, 3>(0, i * 3) = Eigen::Matrix3d::Identity();
+//             Iij.block<3, 3>(0, j * 3) = -Eigen::Matrix3d::Identity();
+//
+//             Eigen::MatrixXd a = beta.transpose() * Iij.transpose() * Iij *
+//             beta; Eigen::VectorXd b =
+//                 2 * y.transpose() * Iij.transpose() * Iij * beta;
+//             double c =
+//                 y.transpose() * Iij.transpose() * Iij * y -
+//                 (control_points_w[i] - control_points_w[j]).squaredNorm();
+//             Eigen::VectorXd Hij(6);
+//             Hij << a(0, 0), a(1, 1), a(0, 1) + a(1, 0), b(0), b(1), c;
+//             as.emplace_back(a);
+//             bs.emplace_back(b);
+//             cs.emplace_back(c);
+//
+//             H += Hij * Hij.transpose();
+//         }
+//     }
+//
+//     Eigen::MatrixXd M = Eigen::MatrixXd::Zero(21, 21);
+//
+//     Eigen::Vector3d u;
+//     u.setRandom();
+//     u *= 100;
+//
+//     constructM_N2(H, u, M);
+//     Eigen::MatrixXd M0 =
+//         M.block<9, 9>(0, 0) - M.block<9, 12>(0, 9) *
+//                                   M.block<12, 12>(9, 9).inverse() *
+//                                   M.block<12, 9>(9, 0);
+//
+//     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
+//     if (es.info() != Eigen::Success) {
+//         cerr << "Eigen decomposition failed." << endl;
+//         return numeric_limits<double>::max();
+//     }
+//
+//     Eigen::MatrixXcd V = es.eigenvectors();
+//     Eigen::Matrix3d Rbw_tmp;
+//     Eigen::Vector3d tbw_tmp;
+//     vector<Eigen::Vector3d> control_points_b(4);
+//     Eigen::VectorXd y1;
+//     double min_error = numeric_limits<double>::max();
+//     int j = 0;
+//     for (int i = 0; i < 9; ++i) {
+//         Eigen::VectorXcd Vk = V.col(i);
+//         if (Vk(0) == complex<double>(0, 0)) {
+//             continue; // Skip if the first element is zero
+//         }
+//         Vk /= Vk(0); // Normalize the first element to 1
+//         if (Vk(1).imag() == 0.0) {
+//             // cout << "Vk: " << Vk.transpose() << endl;
+//
+//             lambdas(0) = Vk(1).real();
+//             lambdas(1) = Vk(2).real();
+//             lambdas_tmp = lambdas;
+//             if (lambdaRefine(as, bs, cs, lambdas_tmp))
+//                 lambdas = lambdas_tmp;
+//             // cout << "lambdas: " << lambdas.transpose() << endl;
+//
+//             y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1);
+//
+//             control_points_b[0] << y1(0), y1(1), y1(2);
+//             control_points_b[1] << y1(3), y1(4), y1(5);
+//             control_points_b[2] << y1(6), y1(7), y1(8);
+//             control_points_b[3] << y1(9), y1(10), y1(11);
+//
+//             computePose(control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+//
+//             double error = computeReprojError(Rbw_tmp, tbw_tmp);
+//             // cout << "error: " << error << endl;
+//             if (error < min_error) {
+//                 min_error = error;
+//                 Rbw = Rbw_tmp;
+//                 tbw = tbw_tmp;
+//                 lambdas = lambdas;
+//             }
+//         }
+//     }
+//
+//     return min_error;
+// }
 
 double UPnPL::solveN2(const vector<Eigen::Vector3d> &control_points_w,
                       const Eigen::MatrixXd &beta, const Eigen::VectorXd &y,
                       Eigen::Matrix3d &Rbw, Eigen::Vector3d &tbw) {
-    Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Zero();
     Eigen::VectorXd lambdas(2), lambdas_tmp(2);
 
     Eigen::MatrixXd Iij;
-    vector<Eigen::MatrixXd> as;
-    vector<Eigen::VectorXd> bs;
-    vector<double> cs;
+    vector<Eigen::MatrixXd> as, as_M;
+    vector<Eigen::VectorXd> bs, bs_M;
+    vector<double> cs, cs_M;
 
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
@@ -586,33 +768,46 @@ double UPnPL::solveN2(const vector<Eigen::Vector3d> &control_points_w,
             double c =
                 y.transpose() * Iij.transpose() * Iij * y -
                 (control_points_w[i] - control_points_w[j]).squaredNorm();
-            Eigen::VectorXd Hij(6);
-            Hij << a(0, 0), a(1, 1), a(0, 1) + a(1, 0), b(0), b(1), c;
             as.emplace_back(a);
             bs.emplace_back(b);
             cs.emplace_back(c);
-
-            H += Hij * Hij.transpose();
         }
     }
 
-    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(21, 21);
+    as_M.resize(2);
+    as_M[0] = as[0] + as[1] + as[2];
+    as_M[1] = as[3] + as[4] + as[5];
+    bs_M.resize(2);
+    bs_M[0] = bs[0] + bs[1] + bs[2];
+    bs_M[1] = bs[3] + bs[4] + bs[5];
+    cs_M.resize(2);
+    cs_M[0] = cs[0] + cs[1] + cs[2];
+    cs_M[1] = cs[3] + cs[4] + cs[5];
 
-    Eigen::Vector3d u;
+    Eigen::MatrixXd M = Eigen::MatrixXd::Zero(10, 10);
+
+    Eigen::VectorXd u(3);
+    // random generation of u
     u.setRandom();
     u *= 100;
 
-    constructM_N2(H, u, M);
-    Eigen::MatrixXd M0 =
-        M.block<9, 9>(0, 0) - M.block<9, 12>(0, 9) *
-                                  M.block<12, 12>(9, 9).inverse() *
-                                  M.block<12, 9>(9, 0);
+    constructM_N2(as_M, bs_M, cs_M, u, M);
+    Eigen::MatrixXd M0 = M.block<4, 4>(0, 0) -
+                         M.block<4, 6>(0, 4) * M.block<6, 6>(4, 4).inverse() *
+                             M.block<6, 4>(4, 0);
 
     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
     if (es.info() != Eigen::Success) {
-        cerr << "Eigen decomposition failed." << endl;
+        // cerr << "Eigen decomposition failed N2." << endl;
         return numeric_limits<double>::max();
     }
+
+    vector<int> index(m_ + n_);
+    iota(index.begin(), index.end(), 0); // Fill index with 0, 1, ..., total-1
+    random_device rd;
+    mt19937 g(rd());
+    shuffle(index.begin(), index.end(), g); // Shuffle the indices
+    index.resize(min(num_error_, m_ + n_));
 
     Eigen::MatrixXcd V = es.eigenvectors();
     Eigen::Matrix3d Rbw_tmp;
@@ -621,43 +816,51 @@ double UPnPL::solveN2(const vector<Eigen::Vector3d> &control_points_w,
     Eigen::VectorXd y1;
     double min_error = numeric_limits<double>::max();
     int j = 0;
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 4; ++i) {
         Eigen::VectorXcd Vk = V.col(i);
         if (Vk(0) == complex<double>(0, 0)) {
             continue; // Skip if the first element is zero
         }
         Vk /= Vk(0); // Normalize the first element to 1
-        if (Vk(1).imag() == 0.0) {
+        if (Vk(1).imag() < 1e-3) {
             // cout << "Vk: " << Vk.transpose() << endl;
 
-            lambdas(0) = Vk(1).real();
-            lambdas(1) = Vk(2).real();
-            lambdas_tmp = lambdas;
-            if (lambdaRefine(as, bs, cs, lambdas_tmp))
-                lambdas = lambdas_tmp;
-            // cout << "lambdas: " << lambdas.transpose() << endl;
+            lambdas_tmp(0) = Vk(1).real();
+            lambdas_tmp(1) = Vk(2).real();
 
-            y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1);
+            y1 =
+                y + lambdas_tmp(0) * beta.col(0) + lambdas_tmp(1) * beta.col(1);
+            // cout << "y1: " << y1.transpose() << endl;
 
             control_points_b[0] << y1(0), y1(1), y1(2);
             control_points_b[1] << y1(3), y1(4), y1(5);
             control_points_b[2] << y1(6), y1(7), y1(8);
             control_points_b[3] << y1(9), y1(10), y1(11);
 
-            computePose(control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            // computePose(index, control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            computePose(control_points_b, Rbw_tmp, tbw_tmp);
 
-            double error = computeReprojError(Rbw_tmp, tbw_tmp);
+            double error = computeReprojError(index, Rbw_tmp, tbw_tmp);
             // cout << "error: " << error << endl;
             if (error < min_error) {
                 min_error = error;
-                Rbw = Rbw_tmp;
-                tbw = tbw_tmp;
-                lambdas = lambdas;
+                // Rbw = Rbw_tmp;
+                // tbw = tbw_tmp;
+                lambdas = lambdas_tmp;
             }
         }
     }
-
-    return min_error;
+    lambdas_tmp = lambdas;
+    if (lambdaRefine(as, bs, cs, lambdas_tmp)) {
+        lambdas = lambdas_tmp;
+    }
+    y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1);
+    control_points_b[0] << y1(0), y1(1), y1(2);
+    control_points_b[1] << y1(3), y1(4), y1(5);
+    control_points_b[2] << y1(6), y1(7), y1(8);
+    control_points_b[3] << y1(9), y1(10), y1(11);
+    computePose(control_points_b, alpha_, Rbw, tbw);
+    return computeReprojError(Rbw, tbw);
 }
 
 double UPnPL::solveN4(const vector<Eigen::Vector3d> &control_points_w,
@@ -717,9 +920,16 @@ double UPnPL::solveN4(const vector<Eigen::Vector3d> &control_points_w,
                                     M.block<110, 16>(16, 0);
     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
     if (es.info() != Eigen::Success) {
-        cerr << "Eigen decomposition failed N4." << endl;
+        // cerr << "Eigen decomposition failed N4." << endl;
         return numeric_limits<double>::max();
     }
+
+    vector<int> index(m_ + n_);
+    iota(index.begin(), index.end(), 0); // Fill index with 0, 1, ..., total-1
+    random_device rd;
+    mt19937 g(rd());
+    shuffle(index.begin(), index.end(), g); // Shuffle the indices
+    index.resize(min(num_error_, m_ + n_));
 
     Eigen::MatrixXcd V = es.eigenvectors();
     Eigen::Matrix3d Rbw_tmp;
@@ -736,17 +946,15 @@ double UPnPL::solveN4(const vector<Eigen::Vector3d> &control_points_w,
         Vk /= Vk(0); // Normalize the first element to 1
         if (Vk(1).imag() < 1e-3) {
 
-            lambdas(0) = Vk(1).real();
-            lambdas(1) = Vk(2).real();
-            lambdas(2) = Vk(3).real();
-            lambdas(3) = Vk(4).real();
-            lambdas_tmp = lambdas;
-            if (lambdaRefine(as, bs, cs, lambdas_tmp))
-                lambdas = lambdas_tmp;
+            lambdas_tmp(0) = Vk(1).real();
+            lambdas_tmp(1) = Vk(2).real();
+            lambdas_tmp(2) = Vk(3).real();
+            lambdas_tmp(3) = Vk(4).real();
             // cout << "lambdas: " << lambdas.transpose() << endl;
 
-            y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1) +
-                 lambdas(2) * beta.col(2) + lambdas(3) * beta.col(3);
+            y1 = y + lambdas_tmp(0) * beta.col(0) +
+                 lambdas_tmp(1) * beta.col(1) + lambdas_tmp(2) * beta.col(2) +
+                 lambdas_tmp(3) * beta.col(3);
             // cout << "y1: " << y1.transpose() << endl;
 
             control_points_b[0] << y1(0), y1(1), y1(2);
@@ -754,19 +962,32 @@ double UPnPL::solveN4(const vector<Eigen::Vector3d> &control_points_w,
             control_points_b[2] << y1(6), y1(7), y1(8);
             control_points_b[3] << y1(9), y1(10), y1(11);
 
-            computePose(control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            computePose(index, control_points_b, alpha_, Rbw_tmp, tbw_tmp);
 
-            double error = computeReprojError(Rbw_tmp, tbw_tmp);
+            double error = computeReprojError(index, Rbw_tmp, tbw_tmp);
             // cout << "error: " << error << endl;
             if (error < min_error) {
                 min_error = error;
-                Rbw = Rbw_tmp;
-                tbw = tbw_tmp;
-                lambdas = lambdas;
+                // Rbw = Rbw_tmp;
+                // tbw = tbw_tmp;
+                lambdas = lambdas_tmp;
             }
         }
     }
-    return min_error;
+
+    lambdas_tmp = lambdas;
+    if (lambdaRefine(as, bs, cs, lambdas_tmp)) {
+        lambdas = lambdas_tmp;
+    }
+
+    y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1) +
+         lambdas(2) * beta.col(2) + lambdas(3) * beta.col(3);
+    control_points_b[0] << y1(0), y1(1), y1(2);
+    control_points_b[1] << y1(3), y1(4), y1(5);
+    control_points_b[2] << y1(6), y1(7), y1(8);
+    control_points_b[3] << y1(9), y1(10), y1(11);
+    computePose(control_points_b, alpha_, Rbw, tbw);
+    return computeReprojError(Rbw, tbw);
 }
 
 double UPnPL::solveN3(const vector<Eigen::Vector3d> &control_points_w,
@@ -824,9 +1045,16 @@ double UPnPL::solveN3(const vector<Eigen::Vector3d> &control_points_w,
 
     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
     if (es.info() != Eigen::Success) {
-        cerr << "Eigen decomposition failed N3." << endl;
+        // cerr << "Eigen decomposition failed N3." << endl;
         return numeric_limits<double>::max();
     }
+
+    vector<int> index(m_ + n_);
+    iota(index.begin(), index.end(), 0); // Fill index with 0, 1, ..., total-1
+    random_device rd;
+    mt19937 g(rd());
+    shuffle(index.begin(), index.end(), g); // Shuffle the indices
+    index.resize(min(num_error_, m_ + n_));
 
     Eigen::MatrixXcd V = es.eigenvectors();
     Eigen::Matrix3d Rbw_tmp;
@@ -844,35 +1072,43 @@ double UPnPL::solveN3(const vector<Eigen::Vector3d> &control_points_w,
         if (Vk(1).imag() < 1e-3) {
             // cout << "Vk: " << Vk.transpose() << endl;
 
-            lambdas(0) = Vk(1).real();
-            lambdas(1) = Vk(2).real();
-            lambdas(2) = Vk(3).real();
-            lambdas_tmp = lambdas;
-            if (lambdaRefine(as, bs, cs, lambdas_tmp))
-                lambdas = lambdas_tmp;
-            // cout << "lambdas: " << lambdas.transpose() << endl;
+            lambdas_tmp(0) = Vk(1).real();
+            lambdas_tmp(1) = Vk(2).real();
+            lambdas_tmp(2) = Vk(3).real();
 
-            y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1) +
-                 lambdas(2) * beta.col(2);
+            y1 = y + lambdas_tmp(0) * beta.col(0) +
+                 lambdas_tmp(1) * beta.col(1) + lambdas_tmp(2) * beta.col(2);
 
             control_points_b[0] << y1(0), y1(1), y1(2);
             control_points_b[1] << y1(3), y1(4), y1(5);
             control_points_b[2] << y1(6), y1(7), y1(8);
             control_points_b[3] << y1(9), y1(10), y1(11);
 
-            computePose(control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            // computePose(index, control_points_b, alpha_, Rbw_tmp, tbw_tmp);
+            computePose(control_points_b, Rbw_tmp, tbw_tmp);
 
-            double error = computeReprojError(Rbw_tmp, tbw_tmp);
+            double error = computeReprojError(index, Rbw_tmp, tbw_tmp);
             // cout << "error: " << error << endl;
             if (error < min_error) {
                 min_error = error;
-                Rbw = Rbw_tmp;
-                tbw = tbw_tmp;
-                lambdas = lambdas;
+                // Rbw = Rbw_tmp;
+                // tbw = tbw_tmp;
+                lambdas = lambdas_tmp;
             }
         }
     }
-    return min_error;
+    lambdas_tmp = lambdas;
+    if (lambdaRefine(as, bs, cs, lambdas_tmp)) {
+        lambdas = lambdas_tmp;
+    }
+    y1 = y + lambdas(0) * beta.col(0) + lambdas(1) * beta.col(1) +
+         lambdas(2) * beta.col(2);
+    control_points_b[0] << y1(0), y1(1), y1(2);
+    control_points_b[1] << y1(3), y1(4), y1(5);
+    control_points_b[2] << y1(6), y1(7), y1(8);
+    control_points_b[3] << y1(9), y1(10), y1(11);
+    computePose(control_points_b, alpha_, Rbw, tbw);
+    return computeReprojError(Rbw, tbw);
 }
 
 bool UPnPL::lambdaRefine(const vector<Eigen::MatrixXd> &a,
@@ -890,6 +1126,7 @@ bool UPnPL::lambdaRefine(const vector<Eigen::MatrixXd> &a,
             cost_function->AddParameterBlock(dim);
             cost_function->SetNumResiduals(1);
             problem.AddResidualBlock(cost_function, nullptr, lambda.data());
+            k++;
         }
     }
 
@@ -931,11 +1168,44 @@ double UPnPL::computeReprojError(const Eigen::Matrix3d &R_bw,
     return reproj_error;
 }
 
+double UPnPL::computeReprojError(const vector<int> &index,
+                                 const Eigen::Matrix3d &R_bw,
+                                 const Eigen::Vector3d &t_bw) {
+    double reproj_error = 0.0;
+
+    for (const int &i : index) {
+        if (i < m_) {
+            Eigen::Vector3d p1 = lines_w_n_[i].head<3>();
+            Eigen::Vector3d p2 = lines_w_n_[i].tail<3>();
+
+            Eigen::Vector3d line_start_b = R_bw * p1 + t_bw;
+            Eigen::Vector3d line_end_b = R_bw * p2 + t_bw;
+
+            reproj_error +=
+                abs(normals_b_[i].dot(line_start_b - tbc_n_[lines_cam_[i]]) *
+                    normals_b_[i].dot(line_end_b - tbc_n_[lines_cam_[i]]));
+        } else {
+            int j = i - m_;
+            Eigen::Vector3d p = points_w_n_[j];
+            Eigen::Vector3d point_b = R_bw * p + t_bw;
+
+            reproj_error += (point_b - tbc_n_[points_cam_[j]])
+                                .cross(uv_b_[j].normalized())
+                                .squaredNorm();
+        }
+    }
+
+    return reproj_error;
+}
+
 void UPnPL::computePose(const vector<Eigen::Vector3d> &control_points_b,
                         const vector<double> &alpha, Eigen::Matrix3d &R_bw,
                         Eigen::Vector3d &t_bw) {
     vector<Eigen::Vector3d> points_b(n_);
     vector<Eigen::VectorXd> lines_b(m_);
+
+    Eigen::Vector3d pb0 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d pw0 = Eigen::Vector3d::Zero();
 
     for (int i = 0; i < m_; ++i) {
         Eigen::Vector3d p1 = alpha[i * 8] * control_points_b[0] +
@@ -949,6 +1219,15 @@ void UPnPL::computePose(const vector<Eigen::Vector3d> &control_points_b,
         lines_b[i].resize(6);
         lines_b[i].head<3>() = p1;
         lines_b[i].tail<3>() = p2;
+
+        Eigen::Vector3d pw1 = lines_w_n_[i].head<3>();
+        Eigen::Vector3d pw2 = lines_w_n_[i].tail<3>();
+
+        pb0 += p1;
+        pb0 += p2;
+
+        pw0 += pw1;
+        pw0 += pw2;
     }
 
     for (int j = 0; j < n_; ++j) {
@@ -957,27 +1236,8 @@ void UPnPL::computePose(const vector<Eigen::Vector3d> &control_points_b,
                             alpha[m_ * 8 + j * 4 + 2] * control_points_b[2] +
                             alpha[m_ * 8 + j * 4 + 3] * control_points_b[3];
         points_b[j] = p;
-    }
 
-    Eigen::Vector3d pb0 = Eigen::Vector3d::Zero();
-    Eigen::Vector3d pw0 = Eigen::Vector3d::Zero();
-
-    for (int i = 0; i < m_; ++i) {
-        Eigen::Vector3d pb1 = lines_b[i].head<3>();
-        Eigen::Vector3d pb2 = lines_b[i].tail<3>();
-
-        Eigen::Vector3d pw1 = lines_w_n_[i].head<3>();
-        Eigen::Vector3d pw2 = lines_w_n_[i].tail<3>();
-
-        pb0 += pb1;
-        pb0 += pb2;
-
-        pw0 += pw1;
-        pw0 += pw2;
-    }
-
-    for (int j = 0; j < n_; ++j) {
-        pb0 += points_b[j];
+        pb0 += p;
         pw0 += points_w_n_[j];
     }
 
@@ -1016,6 +1276,137 @@ void UPnPL::computePose(const vector<Eigen::Vector3d> &control_points_b,
         R_bw = U * V.transpose();
     }
     // cout << "R_bw:\n" << R_bw << endl;
+    t_bw = pb0 - R_bw * pw0;
+}
+
+void UPnPL::computePose(const vector<int> &index,
+                        const vector<Eigen::Vector3d> &control_points_b,
+                        const vector<double> &alpha, Eigen::Matrix3d &R_bw,
+                        Eigen::Vector3d &t_bw) {
+    Eigen::Vector3d pb0 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d pw0 = Eigen::Vector3d::Zero();
+
+    vector<Eigen::Vector3d> line_endpoints;
+    vector<int> lines_index_w;
+    vector<Eigen::Vector3d> points;
+    vector<int> points_index_w;
+    line_endpoints.reserve(2 * index.size());
+    lines_index_w.reserve(index.size());
+    points.reserve(index.size());
+    points_index_w.reserve(index.size());
+
+    for (const int &i : index) {
+        if (i < m_) {
+            Eigen::Vector3d p1 = alpha[i * 8] * control_points_b[0] +
+                                 alpha[i * 8 + 1] * control_points_b[1] +
+                                 alpha[i * 8 + 2] * control_points_b[2] +
+                                 alpha[i * 8 + 3] * control_points_b[3];
+            Eigen::Vector3d p2 = alpha[i * 8 + 4] * control_points_b[0] +
+                                 alpha[i * 8 + 5] * control_points_b[1] +
+                                 alpha[i * 8 + 6] * control_points_b[2] +
+                                 alpha[i * 8 + 7] * control_points_b[3];
+            pb0 += p1;
+            pb0 += p2;
+            line_endpoints.push_back(p1);
+            line_endpoints.push_back(p2);
+
+            Eigen::Vector3d pw1 = lines_w_n_[i].head<3>();
+            Eigen::Vector3d pw2 = lines_w_n_[i].tail<3>();
+            lines_index_w.push_back(i);
+            pw0 += pw1;
+            pw0 += pw2;
+        } else {
+            int j = i - m_;
+            Eigen::Vector3d p =
+                alpha[m_ * 8 + j * 4] * control_points_b[0] +
+                alpha[m_ * 8 + j * 4 + 1] * control_points_b[1] +
+                alpha[m_ * 8 + j * 4 + 2] * control_points_b[2] +
+                alpha[m_ * 8 + j * 4 + 3] * control_points_b[3];
+            pb0 += p;
+            points.push_back(p);
+
+            Eigen::Vector3d pw = points_w_n_[j];
+            points_index_w.push_back(j);
+            pw0 += pw;
+        }
+    }
+
+    int num = line_endpoints.size() + points.size();
+    pb0 /= num;
+    pw0 /= num;
+
+    Eigen::Matrix3d ABt = Eigen::Matrix3d::Zero();
+
+    for (size_t i = 0; i < line_endpoints.size(); i += 2) {
+        Eigen::Vector3d pb1 = line_endpoints[i];
+        Eigen::Vector3d pb2 = line_endpoints[i + 1];
+
+        Eigen::Vector3d pw1 = lines_w_n_[lines_index_w[i / 2]].head<3>();
+        Eigen::Vector3d pw2 = lines_w_n_[lines_index_w[i / 2]].tail<3>();
+
+        ABt += (pb1 - pb0) * (pw1 - pw0).transpose();
+        ABt += (pb2 - pb0) * (pw2 - pw0).transpose();
+    }
+
+    for (size_t j = 0; j < points.size(); ++j) {
+        Eigen::Vector3d pb = points[j];
+        Eigen::Vector3d pw = points_w_n_[points_index_w[j]];
+
+        ABt += (pb - pb0) * (pw - pw0).transpose();
+    }
+
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(ABt, Eigen::ComputeFullU |
+                                                   Eigen::ComputeFullV);
+
+    Eigen::Matrix3d U = svd.matrixU();
+    Eigen::Matrix3d V = svd.matrixV();
+
+    R_bw = U * V.transpose();
+
+    if (R_bw.determinant() < 0) {
+        V.col(2) *= -1;
+        R_bw = U * V.transpose();
+    }
+
+    // cout << "R_bw:\n" << R_bw << endl;
+    t_bw = pb0 - R_bw * pw0;
+}
+
+void UPnPL::computePose(const vector<Eigen::Vector3d> &control_points_b,
+                        Eigen::Matrix3d &R_bw, Eigen::Vector3d &t_bw) {
+    Eigen::Vector3d pb0 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d pw0 = Eigen::Vector3d::Zero();
+
+    for (int i = 0; i < 4; ++i) {
+        pb0 += control_points_b[i];
+        pw0 += control_points_w_[i];
+    }
+
+    pb0 /= 4;
+    pw0 /= 4;
+
+    Eigen::Matrix3d ABt = Eigen::Matrix3d::Zero();
+
+    for (int i = 0; i < 4; ++i) {
+        Eigen::Vector3d pb = control_points_b[i];
+        Eigen::Vector3d pw = control_points_w_[i];
+
+        ABt += (pb - pb0) * (pw - pw0).transpose();
+    }
+
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(ABt, Eigen::ComputeFullU |
+                                                   Eigen::ComputeFullV);
+
+    Eigen::Matrix3d U = svd.matrixU();
+    Eigen::Matrix3d V = svd.matrixV();
+
+    R_bw = U * V.transpose();
+
+    if (R_bw.determinant() < 0) {
+        V.col(2) *= -1;
+        R_bw = U * V.transpose();
+    }
+
     t_bw = pb0 - R_bw * pw0;
 }
 
@@ -1162,6 +1553,10 @@ void UPnPL::normalization(const vector<Eigen::Vector3d> &points_w,
 
     center = A.ldlt().solve(b);
 
+    if (!normalize) {
+        center.setZero();
+    }
+
     double dist = 0;
     for (const auto &p : points_w) {
         dist += (p - center).norm();
@@ -1182,7 +1577,6 @@ void UPnPL::normalization(const vector<Eigen::Vector3d> &points_w,
 
     if (!normalize) {
         scale = 1;
-        center.setZero();
     }
 
     points_w_n.resize(n);
@@ -1203,11 +1597,51 @@ void UPnPL::normalization(const vector<Eigen::Vector3d> &points_w,
 
         Eigen::Vector3d p_proj = p1_n + d * (-p1_n).dot(d);
         double dist_l = line_dist[i] * scale;
+        dist_l = 0.5;
 
         lines_w_n[i].resize(6);
-        lines_w_n[i].head<3>() = p_proj + d * dist_l;
-        lines_w_n[i].tail<3>() = p_proj - d * dist_l;
+        if (normalize) {
+            lines_w_n[i].head<3>() = p_proj + d * dist_l;
+            lines_w_n[i].tail<3>() = p_proj - d * dist_l;
+        } else {
+            lines_w_n[i].head<3>() = p1_n;
+            lines_w_n[i].tail<3>() = p2_n;
+        }
     }
+}
+
+Eigen::Vector2d UPnPL::computeCorrectness(const Eigen::Vector2d &p,
+                                          const Eigen::Vector2d &pd,
+                                          const Eigen::Vector2d &v,
+                                          const Eigen::Vector3d &line_param,
+                                          double d) {
+    double a = line_param(0), b = line_param(1), c = line_param(2);
+    double px = p(0), py = p(1);
+    double vx = v(0), vy = v(1);
+
+    double lambda1 =
+        (d * sqrt(a * a + b * b) - a * px - b * py - c) / (a * vx + b * vy);
+    double lambda2 =
+        (-d * sqrt(a * a + b * b) - a * px - b * py - c) / (a * vx + b * vy);
+
+    Eigen::Vector2d p1 = p + lambda1 * v;
+    double d1 = (p1 - pd).norm();
+    Eigen::Vector2d p2 = p + lambda2 * v;
+    double d2 = (p2 - pd).norm();
+
+    if (d1 < d2)
+        return p1;
+    return p2;
+}
+
+Eigen::Vector3d UPnPL::backProjPointToLine(const Eigen::Vector2d &x,
+                                           const Eigen::Vector3d &X,
+                                           const Eigen::Vector3d &v) {
+    Eigen::Vector3d r0, r1;
+    r0 << X(0), v(0), -x(0);
+    r1 << X(1), v(1), -x(1);
+    Eigen::Vector3d r3 = r0.cross(r1);
+    return X + r3(1) / r3(0) * v;
 }
 
 double UPnPL::pointLineDistance(const Eigen::Vector3d &x,
