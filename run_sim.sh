@@ -23,4 +23,3 @@ do
     ./build/sim_test 50 50 "$i"
 done
 
-

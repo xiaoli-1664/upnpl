@@ -32,12 +32,6 @@ target_link_libraries(UPnPL ${OpenCV_LIBS} ${CERES_LIBRARIES})
 add_executable(sim_test src/sim_test.cc)
 target_link_libraries(sim_test UPnPL opengv)
 
-add_executable(vgg_real_test src/vgg_real_test.cc)
-target_link_libraries(vgg_real_test UPnPL)
-
-add_executable(tum_test src/tum_test.cc)
-target_link_libraries(tum_test UPnPL yaml-cpp)
-
 add_executable(euroc_test src/euroc_test.cc)
-target_link_libraries(euroc_test UPnPL yaml-cpp)
+target_link_libraries(euroc_test UPnPL yaml-cpp opengv)
 

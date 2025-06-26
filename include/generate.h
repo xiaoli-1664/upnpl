@@ -8,71 +8,10 @@
 #include <opencv2/line_descriptor.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "utils.h"
+
 using namespace std;
-
-struct Camera {
-    double fx, fy, cx, cy;
-    string distortion_model;
-    vector<double> distortion_coeffs;
-    vector<double> image_size;
-    Eigen::Isometry3d Tbc;
-
-    cv::Mat map1, map2;
-
-    bool need_rictified = false;
-
-    void backProjectPixel(double u, double v, Eigen::Vector3d &point) const {
-        point(0) = (u - cx) / fx;
-        point(1) = (v - cy) / fy;
-        point(2) = 1.0;    // Assuming unit depth for back-projection
-        point.normalize(); // Normalize to make it a unit vector
-    }
-
-    void getRectifiedFisheyeCamera() {
-        cv::Size image_size_cv(image_size[0], image_size[1]);
-
-        cv::Mat K = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
-        cv::Mat D = cv::Mat(distortion_coeffs);
-
-        cv::Mat R = cv::Mat::eye(3, 3, CV_64F);
-
-        cv::Mat newK;
-
-        double alpha = 1.0;
-
-        cv::fisheye::estimateNewCameraMatrixForUndistortRectify(
-            K, D, image_size_cv, R, newK, alpha);
-
-        fx = newK.at<double>(0, 0);
-        fy = newK.at<double>(1, 1);
-        cx = newK.at<double>(0, 2);
-        cy = newK.at<double>(1, 2);
-
-        cv::fisheye::initUndistortRectifyMap(K, D, R, newK, image_size_cv,
-                                             CV_32FC1, map1, map2);
-        need_rictified = true;
-    }
-
-    void getRecitifiedPinholeCamera() {
-        cv::Size image_size_cv(image_size[0], image_size[1]);
-        cv::Mat K = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
-        cv::Mat D = cv::Mat(distortion_coeffs);
-
-        cv::Mat newK;
-        double alpha = 1.0;
-
-        newK = cv::getOptimalNewCameraMatrix(K, D, image_size_cv, alpha,
-                                             image_size_cv);
-
-        cv::initUndistortRectifyMap(K, distortion_coeffs, cv::Mat(), newK,
-                                    image_size_cv, CV_32FC1, map1, map2);
-        fx = newK.at<double>(0, 0);
-        fy = newK.at<double>(1, 1);
-        cx = newK.at<double>(0, 2);
-        cy = newK.at<double>(1, 2);
-        need_rictified = true;
-    }
-};
+using namespace utils;
 
 Eigen::MatrixXd cvMatToEigen(const cv::Mat &mat) {
     Eigen::MatrixXd eigen_mat(mat.rows, mat.cols);
@@ -164,10 +103,12 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                       const vector<vector<Eigen::Isometry3d>> &poses_gt,
                       const vector<Camera> &cameras,
                       vector<Eigen::Vector3d> &points_w,
+                      vector<double> &points_sigma,
                       vector<Eigen::VectorXd> &lines_w,
+                      vector<double> &lines_sigma,
                       vector<Eigen::Vector3d> &uv_c,
-                      vector<Eigen::Vector3d> &normals_c,
-                      vector<int> &points_cam, vector<int> &lines_cam) {
+                      vector<Eigen::VectorXd> &lines_c, vector<int> &points_cam,
+                      vector<int> &lines_cam) {
     int num_cameras = cameras.size();
     const int num_features = 200;
 
@@ -240,11 +181,11 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         cv::Mat K1 = (cv::Mat_<double>(3, 3) << cameras[cam_j_id].fx, 0,
                       cameras[cam_j_id].cx, 0, cameras[cam_j_id].fy,
                       cameras[cam_j_id].cy, 0, 0, 1);
-        Eigen::Isometry3d T_cw = (pose_gt * camera.Tbc).inverse();
+        Eigen::Isometry3d T_cw = (pose_gt * camera.T_bc).inverse();
         cv::Mat R_cw = eigenToCvMat(T_cw.linear());
         cv::Mat t_cw = eigenToCvMat(T_cw.translation());
 
-        Eigen::Isometry3d T_cw1 = (pose_gt1 * cameras[cam_j_id].Tbc).inverse();
+        Eigen::Isometry3d T_cw1 = (pose_gt1 * cameras[cam_j_id].T_bc).inverse();
         cv::Mat R_cw1 = eigenToCvMat(T_cw1.linear());
         cv::Mat t_cw1 = eigenToCvMat(T_cw1.translation());
 
@@ -324,6 +265,9 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
 
                 points_w.push_back(point_w);
                 points_cam.push_back(cam_id);
+                int octave = keypoints_next[match.trainIdx].octave;
+                double sigma = pow(1.2, octave) / cameras[cam_id].fx;
+                points_sigma.push_back(sigma * sigma);
                 Eigen::Vector3d uv;
                 camera.backProjectPixel(keypoints_next[match.trainIdx].pt.x,
                                         keypoints_next[match.trainIdx].pt.y,
@@ -379,6 +323,9 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                     }
 
                     points_w.push_back(point_w);
+                    int octave = keypoints0_next[match.trainIdx].octave;
+                    double sigma = pow(1.2, octave) / cameras[0].fx;
+                    points_sigma.push_back(sigma * sigma);
                     points_cam.push_back(0);
                     Eigen::Vector3d uv;
                     cameras[0].backProjectPixel(
@@ -481,7 +428,12 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             int col = keyline_indexes1[match.queryIdx];
             if (col != -1 && valid[col]) {
                 const auto &keyline_next = keylines_next[match.trainIdx];
-                lines_w.push_back(lines_w_temp[col]);
+                Eigen::VectorXd line = lines_w_temp[col];
+                randomEndPoints(line, false);
+                lines_w.push_back(line);
+                int octave = keyline_next.octave;
+                double sigma = pow(1.2, octave) / camera.fx;
+                lines_sigma.push_back(sigma * sigma);
                 lines_cam.push_back(cam_id);
 
                 Eigen::Vector3d uv_start;
@@ -490,9 +442,11 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                 Eigen::Vector3d uv_end;
                 camera.backProjectPixel(keyline_next.endPointX,
                                         keyline_next.endPointY, uv_end);
-                Eigen::Vector3d normal_c = uv_start.cross(uv_end);
+                Eigen::VectorXd line_c(6);
 
-                normals_c.push_back(normal_c.normalized());
+                line_c.head<3>() = uv_start;
+                line_c.tail<3>() = uv_end;
+                lines_c.push_back(line_c);
             }
         }
 
@@ -521,7 +475,12 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                 int col = keyline_indexes2[match.queryIdx];
                 if (col != -1 && valid[col]) {
                     const auto &keyline_next = keylines0_next[match.trainIdx];
-                    lines_w.push_back(lines_w_temp[col]);
+                    Eigen::VectorXd line = lines_w_temp[col];
+                    randomEndPoints(line, false);
+                    lines_w.push_back(line);
+                    int octave = keyline_next.octave;
+                    double sigma = pow(1.2, octave) / cameras[0].fx;
+                    lines_sigma.push_back(sigma * sigma);
                     lines_cam.push_back(0);
 
                     Eigen::Vector3d uv_start;
@@ -531,9 +490,10 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                     Eigen::Vector3d uv_end;
                     cameras[0].backProjectPixel(keyline_next.endPointX,
                                                 keyline_next.endPointY, uv_end);
-                    Eigen::Vector3d normal_c = uv_start.cross(uv_end);
-
-                    normals_c.push_back(normal_c.normalized());
+                    Eigen::VectorXd line_c(6);
+                    line_c.head<3>() = uv_start;
+                    line_c.tail<3>() = uv_end;
+                    lines_c.push_back(line_c);
                 }
             }
         }

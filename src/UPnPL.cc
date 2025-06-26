@@ -18,6 +18,9 @@ void UPnPL::solveMain(const vector<Eigen::Vector3d> &points_w,
                       const vector<Eigen::Matrix3d> &Rbc,
                       const vector<Eigen::Vector3d> &tbc, Eigen::Matrix3d &R_bw,
                       Eigen::Vector3d &t_bw) {
+    if (lines_w.size() == 0) {
+        is_normalized_ = false;
+    }
     vector<Eigen::Vector3d> normals_c(lines_c.size());
     for (size_t i = 0; i < lines_c.size(); ++i) {
         Eigen::Vector3d line_start = lines_c[i].head<3>();
@@ -504,7 +507,6 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
     // cout << "error3: " << error3 << endl;
 
     double error4 = numeric_limits<double>::max();
-    // if (eigenvalues(3) < 1)
     error4 = solveN4(control_points_w_, betas_N4, y, R_N4, t_N4);
     // cout << "error4: " << error4 << endl;
 
@@ -1483,45 +1485,100 @@ void UPnPL::computeAlpha(const vector<Eigen::Vector3d> &points_w,
     CC.col(1) = c2 - c0;
     CC.col(2) = c3 - c0;
 
+    alpha.resize((n + 2 * m) * 4, 0);
+
     Eigen::Matrix3d CC_inv;
     double det_CC = CC.determinant();
-    if (abs(det_CC) < 1e-6) {
-        std::cerr << "CC is singular, cannot compute alpha." << std::endl;
-        return;
-    }
-    CC_inv = CC.inverse();
+    if (abs(det_CC) > 1e-6) {
+        CC_inv = CC.inverse();
 
-    alpha.resize((n + 2 * m) * 4);
+        for (int i = 0; i < m; ++i) {
+            Eigen::Vector3d p1 = lines_w[i].head<3>();
+            Eigen::Vector3d alpha1 = CC_inv * (p1 - c0);
 
-    for (int i = 0; i < m; ++i) {
-        Eigen::Vector3d p1 = lines_w[i].head<3>();
-        Eigen::Vector3d alpha1 = CC_inv * (p1 - c0);
+            alpha[i * 8 + 1] = alpha1(0);
+            alpha[i * 8 + 2] = alpha1(1);
+            alpha[i * 8 + 3] = alpha1(2);
 
-        alpha[i * 8 + 1] = alpha1(0);
-        alpha[i * 8 + 2] = alpha1(1);
-        alpha[i * 8 + 3] = alpha1(2);
+            alpha[i * 8] = 1 - alpha1(0) - alpha1(1) - alpha1(2);
 
-        alpha[i * 8] = 1 - alpha1(0) - alpha1(1) - alpha1(2);
+            Eigen::Vector3d p2 = lines_w[i].tail<3>();
+            Eigen::Vector3d alpha2 = CC_inv * (p2 - c0);
 
-        Eigen::Vector3d p2 = lines_w[i].tail<3>();
-        Eigen::Vector3d alpha2 = CC_inv * (p2 - c0);
+            alpha[i * 8 + 5] = alpha2(0);
+            alpha[i * 8 + 6] = alpha2(1);
+            alpha[i * 8 + 7] = alpha2(2);
 
-        alpha[i * 8 + 5] = alpha2(0);
-        alpha[i * 8 + 6] = alpha2(1);
-        alpha[i * 8 + 7] = alpha2(2);
+            alpha[i * 8 + 4] = 1 - alpha2(0) - alpha2(1) - alpha2(2);
+        }
 
-        alpha[i * 8 + 4] = 1 - alpha2(0) - alpha2(1) - alpha2(2);
-    }
+        for (int i = 0; i < n; ++i) {
+            Eigen::Vector3d p = points_w[i];
+            Eigen::Vector3d alpha_p = CC_inv * (p - c0);
 
-    for (int i = 0; i < n; ++i) {
-        Eigen::Vector3d p = points_w[i];
-        Eigen::Vector3d alpha_p = CC_inv * (p - c0);
+            alpha[m * 8 + i * 4 + 1] = alpha_p(0);
+            alpha[m * 8 + i * 4 + 2] = alpha_p(1);
+            alpha[m * 8 + i * 4 + 3] = alpha_p(2);
 
-        alpha[m * 8 + i * 4 + 1] = alpha_p(0);
-        alpha[m * 8 + i * 4 + 2] = alpha_p(1);
-        alpha[m * 8 + i * 4 + 3] = alpha_p(2);
+            alpha[m * 8 + i * 4] = 1 - alpha_p(0) - alpha_p(1) - alpha_p(2);
+        }
+    } else {
+        vector<pair<int, int>> index_pair = {{1, 2}, {1, 3}, {2, 3}};
 
-        alpha[m * 8 + i * 4] = 1 - alpha_p(0) - alpha_p(1) - alpha_p(2);
+        Eigen::Vector3d u, v;
+        int i1 = -1, i2 = -1;
+
+        for (const auto &pair : index_pair) {
+            Eigen::Vector3d vi = control_points[pair.first] - c0;
+            Eigen::Vector3d vj = control_points[pair.second] - c0;
+            if ((vi.cross(vj)).norm() > 1e-6) {
+                u = vi;
+                v = vj;
+                i1 = pair.first;
+                i2 = pair.second;
+                break;
+            }
+        }
+
+        if (i1 == -1 || i2 == -1) {
+            cerr << "All control points are collinear or coincident." << endl;
+            return;
+        }
+
+        Eigen::Matrix<double, 3, 2> CC2;
+        CC2.col(0) = u;
+        CC2.col(1) = v;
+
+        Eigen::Matrix2d CC2_T_CC2 = CC2.transpose() * CC2;
+        if (abs(CC2_T_CC2.determinant()) < 1e-6) {
+            cerr << "Control points are collinear or coincident." << endl;
+            return;
+        }
+
+        Eigen::Matrix<double, 2, 3> CC2_pinv =
+            CC2_T_CC2.inverse() * CC2.transpose();
+
+        for (int i = 0; i < m; ++i) {
+            Eigen::Vector3d p1 = lines_w[i].head<3>();
+            Eigen::Vector2d alpha1 = CC2_pinv * (p1 - c0);
+            alpha[i * 8 + i1] = alpha1(0);
+            alpha[i * 8 + i2] = alpha1(1);
+            alpha[i * 8] = 1 - alpha1(0) - alpha1(1);
+
+            Eigen::Vector3d p2 = lines_w[i].tail<3>();
+            Eigen::Vector2d alpha2 = CC2_pinv * (p2 - c0);
+            alpha[i * 8 + 4 + i1] = alpha2(0);
+            alpha[i * 8 + 4 + i2] = alpha2(1);
+            alpha[i * 8 + 4] = 1 - alpha2(0) - alpha2(1);
+        }
+
+        for (int i = 0; i < n; ++i) {
+            Eigen::Vector3d p = points_w[i];
+            Eigen::Vector2d alpha_p = CC2_pinv * (p - c0);
+            alpha[m * 8 + i * 4 + i1] = alpha_p(0);
+            alpha[m * 8 + i * 4 + i2] = alpha_p(1);
+            alpha[m * 8 + i * 4] = 1 - alpha_p(0) - alpha_p(1);
+        }
     }
 }
 

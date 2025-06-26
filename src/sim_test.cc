@@ -37,10 +37,16 @@ int main(int argc, char **argv) {
     vector<Eigen::Isometry3d> Tbw_upnp;
     vector<double> times;
 
+    double avg_upupl_1cam = 0.0;
+    double avg_upupl_2cam = 0.0;
+    double avg_upupl_3cam = 0.0;
+    double avg_upupl_4cam = 0.0;
+    double avg_epnp = 0.0;
+    double avg_upnp = 0.0;
     int iter = 10000;
     for (int i = 0; i < iter; ++i) {
         string simulated_data =
-            output_dir + "data/simulated_data_" + to_string(i) + ".txt";
+            output_dir + "data/data_" + to_string(i) + ".txt";
         times.push_back(i * 0.1); // Simulate timestamps
         utils::Simulator simulator(4, point_num, line_num, noise_std);
         simulator.setupCameras();
@@ -60,39 +66,52 @@ int main(int argc, char **argv) {
         // cout << "Generated " << points_w.size() << " points and " <<
         // lines_w.size()
         //      << " lines." << endl;
+        double noise_std_dev = simulator.noise_std_;
+        double sigma = noise_std_dev / simulator.cameras_[0].fx;
+        vector<double> points_sigma(points_w.size(), sigma * sigma);
+        vector<double> lines_sigma(lines_w.size(), sigma * sigma);
 
-        utils::saveDataForMatlab(points_w, lines_w, uv_c, lines_c, points_cam,
-                                 lines_cam, simulated_data, times.back());
+        utils::saveDataForMatlab(points_w, points_sigma, lines_w, lines_sigma,
+                                 uv_c, lines_c, points_cam, lines_cam,
+                                 simulated_data, times.back());
 
+        double used_time = 0.0;
         Eigen::Isometry3d T_bw_est_isometry;
         T_bw_est_isometry =
             myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam, lines_cam,
-                    simulator.cameras_, 4);
+                    simulator.cameras_, 4, used_time);
         Tbw_upnpl_4cam.push_back(T_bw_est_isometry);
+        avg_upupl_4cam += used_time;
 
         T_bw_est_isometry =
             myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam, lines_cam,
-                    simulator.cameras_, 3);
+                    simulator.cameras_, 3, used_time);
         Tbw_upnpl_3cam.push_back(T_bw_est_isometry);
+        avg_upupl_3cam += used_time;
 
         T_bw_est_isometry =
             myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam, lines_cam,
-                    simulator.cameras_, 2);
+                    simulator.cameras_, 2, used_time);
         Tbw_upnpl_2cam.push_back(T_bw_est_isometry);
+        avg_upupl_2cam += used_time;
 
         T_bw_est_isometry =
             myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam, lines_cam,
-                    simulator.cameras_, 1);
+                    simulator.cameras_, 1, used_time);
         Tbw_upnpl_1cam.push_back(T_bw_est_isometry);
+        avg_upupl_1cam += used_time;
 
         Eigen::Isometry3d T_bw_upnp;
-        T_bw_upnp = opengv_UPnP(points_w, uv_c, points_cam, simulator.cameras_);
+        T_bw_upnp = opengv_UPnP(points_w, uv_c, points_cam, simulator.cameras_,
+                                used_time);
         Tbw_upnp.push_back(T_bw_upnp);
+        avg_upnp += used_time;
 
         // Use OpenCV's EPnP to verify the results
         Eigen::Isometry3d T_bw_epnp =
-            cv_EPnP(points_w, uv_c, points_cam, simulator.cameras_);
+            cv_EPnP(points_w, uv_c, points_cam, simulator.cameras_, used_time);
         Tbw_epnp.push_back(T_bw_epnp);
+        avg_epnp += used_time;
 
         if (save)
             continue;
@@ -112,6 +131,24 @@ int main(int argc, char **argv) {
         cout << "UPnP Estimated t_bw:\n"
              << T_bw_upnp.translation().transpose() << endl;
     }
+
+    avg_upupl_1cam /= iter;
+    avg_upupl_2cam /= iter;
+    avg_upupl_3cam /= iter;
+    avg_upupl_4cam /= iter;
+    avg_epnp /= iter;
+    avg_upnp /= iter;
+
+    cout << "Average time for UPnPL with 1 camera: " << avg_upupl_1cam << " ms"
+         << endl;
+    cout << "Average time for UPnPL with 2 cameras: " << avg_upupl_2cam << " ms"
+         << endl;
+    cout << "Average time for UPnPL with 3 cameras: " << avg_upupl_3cam << " ms"
+         << endl;
+    cout << "Average time for UPnPL with 4 cameras: " << avg_upupl_4cam << " ms"
+         << endl;
+    cout << "Average time for OpenCV EPnP: " << avg_epnp << " ms" << endl;
+    cout << "Average time for OpenGV UPnP: " << avg_upnp << " ms" << endl;
 
     if (save) {
         utils::saveEurocTraejectory(upnpl_4cam_output_file, Tbw_upnpl_4cam,

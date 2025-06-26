@@ -37,20 +37,20 @@ void loadEurocCameraParameters(const string &cam1_file, const string &cam2_file,
     camera2.distortion_coeffs =
         config2["distortion_coefficients"].as<vector<double>>();
 
-    camera1.image_size = config1["resolution"].as<vector<double>>();
-    camera2.image_size = config2["resolution"].as<vector<double>>();
+    camera1.image_size = config1["resolution"].as<array<double, 2>>();
+    camera2.image_size = config2["resolution"].as<array<double, 2>>();
 
     YAML::Node Tbc1_node = config1["T_BS"]["data"];
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
-            camera1.Tbc(i, j) = Tbc1_node[i * 4 + j].as<double>();
+            camera1.T_bc(i, j) = Tbc1_node[i * 4 + j].as<double>();
         }
     }
 
     YAML::Node Tbc2_node = config2["T_BS"]["data"];
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
-            camera2.Tbc(i, j) = Tbc2_node[i * 4 + j].as<double>();
+            camera2.T_bc(i, j) = Tbc2_node[i * 4 + j].as<double>();
         }
     }
 
@@ -140,47 +140,19 @@ void loadEurocImage(const string &image_path, const string &time_file,
     }
 }
 
-void saveEurocTraejectory(const string &output_file,
-                          const vector<Eigen::Isometry3d> &poses,
-                          const vector<double> &times) {
-    if (poses.size() != times.size()) {
-        cerr << "Error: poses and times vectors must have the same size."
-             << endl;
-        return;
+int main(int argc, char **argv) {
+    if (argc != 2) {
+        cerr << "Usage: " << argv[0] << " <sequence_name>" << endl;
+        return 1;
     }
-
-    ofstream ofs(output_file);
-    if (!ofs.is_open()) {
-        cerr << "Failed to open output file: " << output_file << endl;
-        return;
-    }
-
-    ofs << fixed << setprecision(10);
-
-    for (size_t i = 0; i < poses.size(); ++i) {
-        const Eigen::Isometry3d &pose = poses[i];
-        double timestamp = times[i];
-
-        Eigen::Vector3d t = pose.translation();
-
-        Eigen::Quaterniond q(pose.linear());
-
-        ofs << (long long)(timestamp * 1e9) << "," << t.x() << "," << t.y()
-            << "," << t.z() << "," << q.x() << "," << q.y() << "," << q.z()
-            << "," << q.w() << "\n";
-    }
-
-    ofs.close();
-
-    cout << "Trajectory saved to " << output_file << endl;
-}
-
-int main() {
-    string seq = "V1_02_medium";
+    string seq = argv[1];
     string euroc_path = "/home/ljj/dataset/euroc/" + seq + "/mav0/";
 
     string upnpl_out_file = euroc_path + "upnpl_trajectory_" + seq + ".csv";
     string cv_epnp_out_file = euroc_path + "cv_epnp_trajectory_" + seq + ".csv";
+    string upnp_out_file = euroc_path + "upnp_trajectory_" + seq + ".csv";
+    string upnpl_points_out_file = euroc_path + "upnpl_points_" + seq + ".csv";
+    string upnpl_lines_out_file = euroc_path + "upnpl_lines_" + seq + ".csv";
     string gt_out_file = euroc_path + "gt_trajectory_" + seq + ".csv";
 
     string cam1_file = euroc_path + "cam0/sensor.yaml";
@@ -205,94 +177,112 @@ int main() {
     vector<Camera> cameras(2);
     loadEurocCameraParameters(cam1_file, cam2_file, cameras[0], cameras[1]);
 
-    vector<Eigen::Matrix3d> R_bc;
-    vector<Eigen::Vector3d> t_bc;
-    for (int j = 0; j < cameras.size(); ++j) {
-        R_bc.push_back(cameras[j].Tbc.linear());
-        t_bc.push_back(cameras[j].Tbc.translation());
-    }
-
     vector<double> times_save;
     vector<Eigen::Isometry3d> Twb_upnpl;
+    vector<Eigen::Isometry3d> Twb_upnpl_points;
     vector<Eigen::Isometry3d> Twb_cv;
     vector<Eigen::Isometry3d> Twb_gt;
+    vector<Eigen::Isometry3d> Twb_upnp;
+    vector<Eigen::Isometry3d> Twb_upnpl_lines;
     double avg_time_upnpl = 0.0;
     double avg_time_cv = 0.0;
-    for (int i = 0; i < image_files[0].size() - 1; ++i) {
-        Twb_gt.push_back(poses_gt[0][i + 1]);
-        times_save.push_back(times[0][i + 1]);
+    double avg_time_upnp = 0.0;
+    double avg_time_upnpl_points = 0.0;
+    for (int i = 0; i < image_files[0].size() - 91; ++i) {
+        string matlab_data =
+            euroc_path + "data/" + "data_" + to_string(i) + ".txt";
 
         vector<Eigen::Vector3d> points_w;
+        vector<double> points_sigma;
         vector<Eigen::VectorXd> lines_w;
+        vector<double> lines_sigma;
         vector<Eigen::Vector3d> uv_c;
-        vector<Eigen::Vector3d> normals_c;
+        vector<Eigen::VectorXd> lines_c;
         vector<int> points_cam;
         vector<int> lines_cam;
 
-        generatePnPLData(i, image_files, times, poses_gt, cameras, points_w,
-                         lines_w, uv_c, normals_c, points_cam, lines_cam);
-        Eigen::Matrix3d R_bw;
-        Eigen::Vector3d t_bw;
-        UPnPL::UPnPL upnpl;
-        auto start = chrono::high_resolution_clock::now();
-        upnpl.solveUPnPL_EPnPL(points_w, lines_w, uv_c, normals_c, points_cam,
-                               lines_cam, R_bc, t_bc, R_bw, t_bw);
-        auto end = chrono::high_resolution_clock::now();
-        chrono::duration<double, std::milli> elapsed = end - start;
-        avg_time_upnpl += elapsed.count();
-
+        try {
+            generatePnPLData(i, image_files, times, poses_gt, cameras, points_w,
+                             points_sigma, lines_w, lines_sigma, uv_c, lines_c,
+                             points_cam, lines_cam);
+        } catch (const std::exception &e) {
+            cerr << "Error generating data for frame " << i << ": " << e.what()
+                 << endl;
+            continue;
+        }
+        saveDataForMatlab(points_w, points_sigma, lines_w, lines_sigma, uv_c,
+                          lines_c, points_cam, lines_cam, matlab_data,
+                          times[0][i + 1]);
+        Twb_gt.push_back(poses_gt[0][i + 1]);
+        times_save.push_back(times[0][i + 1]);
         Eigen::Isometry3d Tbw = Eigen::Isometry3d::Identity();
-        Tbw.linear() = R_bw;
-        Tbw.translation() = t_bw;
+        double used_time = 0.0;
+        Tbw = utils::myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam,
+                             lines_cam, cameras, 2, used_time);
+        // upnpl.solveUPnPL_EPnPL(points_w, lines_w, uv_c, normals_c,
+        // points_cam,
+        //                        lines_cam, R_bc, t_bc, R_bw, t_bw);
+        avg_time_upnpl += used_time;
+
         Twb_upnpl.push_back(Tbw.inverse());
 
-        // OpenCV EPnP
-        cv::Mat camera_matrix =
-            (cv::Mat_<double>(3, 3) << cameras[0].fx, 0, cameras[0].cx, 0,
-             cameras[0].fy, cameras[0].cy, 0, 0, 1);
-        cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) << 0, 0, 0, 0, 0);
+        // // OpenCV EPnP
+        // cv::Mat camera_matrix =
+        //     (cv::Mat_<double>(3, 3) << cameras[0].fx, 0, cameras[0].cx, 0,
+        //      cameras[0].fy, cameras[0].cy, 0, 0, 1);
+        // cv::Mat dist_coeffs = (cv::Mat_<double>(1, 5) << 0, 0, 0, 0, 0);
+        //
+        // vector<cv::Point3f> object_points;
+        // vector<cv::Point2f> image_points;
+        //
+        // for (int j = 0; j < points_w.size(); ++j) {
+        //     if (points_cam[j] == 0) {
+        //         object_points.emplace_back(points_w[j](0), points_w[j](1),
+        //                                    points_w[j](2));
+        //         Eigen::Vector3d uv = uv_c[j];
+        //         uv /= uv(2);
+        //         cv::Point2f uv_image;
+        //         uv_image.x = uv(0) * cameras[0].fx + cameras[0].cx;
+        //         uv_image.y = uv(1) * cameras[0].fy + cameras[0].cy;
+        //         image_points.emplace_back(uv_image.x, uv_image.y);
+        //     }
+        // }
+        // cv::Mat rvec, tvec;
+        // start = chrono::high_resolution_clock::now();
+        // bool success = false;
+        // if (object_points.size() >= 4 && image_points.size() >= 4)
+        //     success =
+        //         cv::solvePnP(object_points, image_points, camera_matrix,
+        //                      dist_coeffs, rvec, tvec, false,
+        //                      cv::SOLVEPNP_EPNP);
+        // end = chrono::high_resolution_clock::now();
+        // elapsed = end - start;
 
-        vector<cv::Point3f> object_points;
-        vector<cv::Point2f> image_points;
+        Tbw = utils::cv_EPnP(points_w, uv_c, points_cam, cameras, used_time);
+        avg_time_cv += used_time;
+        Twb_cv.push_back(Tbw.inverse());
 
-        for (int j = 0; j < points_w.size(); ++j) {
-            if (points_cam[j] == 0) {
-                object_points.emplace_back(points_w[j](0), points_w[j](1),
-                                           points_w[j](2));
-                Eigen::Vector3d uv = uv_c[j];
-                uv /= uv(2);
-                cv::Point2f uv_image;
-                uv_image.x = uv(0) * cameras[0].fx + cameras[0].cx;
-                uv_image.y = uv(1) * cameras[0].fy + cameras[0].cy;
-                image_points.emplace_back(uv_image.x, uv_image.y);
-            }
-        }
-        cv::Mat rvec, tvec;
-        start = chrono::high_resolution_clock::now();
-        bool success = false;
-        if (object_points.size() >= 4 && image_points.size() >= 4)
-            success =
-                cv::solvePnP(object_points, image_points, camera_matrix,
-                             dist_coeffs, rvec, tvec, false, cv::SOLVEPNP_EPNP);
-        end = chrono::high_resolution_clock::now();
-        elapsed = end - start;
-        avg_time_cv += elapsed.count();
+        Tbw =
+            utils::opengv_UPnP(points_w, uv_c, points_cam, cameras, used_time);
+        avg_time_upnp += used_time;
+        Twb_upnp.push_back(Tbw.inverse());
 
-        if (success) {
-            cv::Mat R_cv;
-            cv::Rodrigues(rvec, R_cv);
-            Eigen::Matrix3d R_cv_eigen = cvMatToEigen(R_cv);
-            Eigen::Vector3d t_cv_eigen(tvec.at<double>(0), tvec.at<double>(1),
-                                       tvec.at<double>(2));
-            Eigen::Isometry3d T_cw = Eigen::Isometry3d::Identity();
-            T_cw.linear() = R_cv_eigen;
-            T_cw.translation() = t_cv_eigen;
-            Eigen::Isometry3d T_bw_cv = cameras[0].Tbc * T_cw;
-            Twb_cv.push_back(T_bw_cv.inverse());
-        } else {
-            cerr << "OpenCV EPnP failed for frame " << i << endl;
-            Twb_cv.push_back(Eigen::Isometry3d::Identity());
-        }
+        vector<int> points_cam_tmp;
+        vector<Eigen::Vector3d> points_w_tmp;
+        vector<Eigen::Vector3d> uv_c_tmp;
+
+        Tbw = utils::myUPnPL(points_w_tmp, lines_w, uv_c_tmp, lines_c,
+                             points_cam_tmp, lines_cam, cameras, 2, used_time);
+        Twb_upnpl_lines.push_back(Tbw.inverse());
+
+        lines_w.clear();
+        lines_c.clear();
+        lines_cam.clear();
+
+        Tbw = utils::myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam,
+                             lines_cam, cameras, 2, used_time);
+        Twb_upnpl_points.push_back(Tbw.inverse());
+        avg_time_upnpl_points += used_time;
 
         cout << "Processed frame " << i << endl;
         // cout << "opencv EPnP Transformation: "
@@ -312,11 +302,19 @@ int main() {
 
     avg_time_upnpl /= Twb_upnpl.size();
     avg_time_cv /= Twb_cv.size();
+    avg_time_upnp /= Twb_upnp.size();
+    avg_time_upnpl_points /= Twb_upnpl_points.size();
 
     cout << "Average UPnPL time: " << avg_time_upnpl << " ms" << endl;
     cout << "Average OpenCV EPnP time: " << avg_time_cv << " ms" << endl;
+    cout << "Average OpenGV UPnP time: " << avg_time_upnp << " ms" << endl;
+    cout << "Average UPnPL only points time: " << avg_time_upnpl_points << " ms"
+         << endl;
 
     saveEurocTraejectory(upnpl_out_file, Twb_upnpl, times_save);
     saveEurocTraejectory(cv_epnp_out_file, Twb_cv, times_save);
+    saveEurocTraejectory(upnp_out_file, Twb_upnp, times_save);
+    saveEurocTraejectory(upnpl_points_out_file, Twb_upnpl_points, times_save);
+    saveEurocTraejectory(upnpl_lines_out_file, Twb_upnpl_lines, times_save);
     saveEurocTraejectory(gt_out_file, Twb_gt, times_save);
 }

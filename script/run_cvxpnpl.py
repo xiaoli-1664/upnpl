@@ -2,8 +2,8 @@ import numpy as np
 import argparse
 from scipy.spatial.transform import Rotation as R
 from cvxpnpl import pnpl
-
-K = np.array([[450, 0, 376], [0, 450, 240], [0, 0, 1]])
+import yaml
+from pathlib import Path
 
 
 def project_points(pts_2d, K):
@@ -71,44 +71,98 @@ def save_trajectory_euroc(R_list, t_list, time_list, output_path):
                 f"{timestamp_ns},{tx:.6f},{ty:.6f},{tz:.6f},{qx:.6f},{qy:.6f},{qz:.6f},{qw:.6f}\n")
 
 
+def load_camera_intrinsics(yaml_path, default_intrinsics=None):
+    """
+    从 YAML 文件加载相机内参，如果文件不存在则返回默认值。
+
+    Args:
+        yaml_path (str): YAML 文件路径
+        default_intrinsics (list): 默认内参值 [fu, fv, cu, cv]
+
+    Returns:
+        list: 相机内参 [fu, fv, cu, cv]
+    """
+    # 默认内参（如果未提供）
+    if default_intrinsics is None:
+        default_intrinsics = [450, 450, 376, 240]
+
+    # 检查文件是否存在
+    yaml_file = Path(yaml_path)
+    if not yaml_file.exists():
+        print(
+            f"Warning: YAML file '{yaml_path}' not found. Using default intrinsics.")
+        return default_intrinsics
+
+    # 读取 YAML 文件
+    try:
+        with open(yaml_file, 'r') as f:
+            data = yaml.safe_load(f)
+
+        # 提取内参
+        intrinsics = data.get('intrinsics')
+        if intrinsics is None:
+            print("Warning: 'intrinsics' key not found in YAML. Using default values.")
+            return default_intrinsics
+
+        # 检查内参格式是否正确
+        if len(intrinsics) != 4:
+            print(
+                f"Warning: Expected 4 values in 'intrinsics', got {len(intrinsics)}. Using defaults.")
+            return default_intrinsics
+
+        return intrinsics
+
+    except Exception as e:
+        print(f"Error loading YAML file: {e}. Using default intrinsics.")
+        return default_intrinsics
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run PNPL algorithm on sim data")
-    parser.add_argument("n_points", type=int, help="Number of points")
-    parser.add_argument("n_lines", type=int, help="Number of lines")
-    parser.add_argument("noise", type=float, help="Noise level or index")
+    # parser.add_argument("n_points", type=int, help="Number of points")
+    # parser.add_argument("n_lines", type=int, help="Number of lines")
+    # parser.add_argument("noise", type=float, help="Noise level or index")
+    # parser.add_argument("is_dataset", type=int, help="")
+    parser.add_argument("data_path", type=str,
+                        help="Path to the data directory")
+    parser.add_argument("count", type=int,
+                        help="Number of data files to process")
     args = parser.parse_args()
 
     R_list = []
     t_list = []
     times = []
 
-    data_path = f"/home/ljj/source_code/PL-MCVO/third-party/upnpl/simulated/{args.n_points}_{args.n_lines}_{int(args.noise)}/"
+    data_path = args.data_path
     output = "cvxpnpl.txt"
+    yaml_file = data_path + "cam0/sensor.yaml"
+    intrinsics = load_camera_intrinsics(yaml_file)
+    K = np.array([[intrinsics[0], 0, intrinsics[2]],
+                  [0, intrinsics[1], intrinsics[3]], [0, 0, 1]])
 
-    for i in range(0, 10000):
-        filename = data_path + f"data/simulated_data_{i}.txt"
+    for i in range(0, args.count):
+        filename = data_path + f"data/data_{i}.txt"
 
         time, pts_3d, pts_2d, line_3d, line_2d = load_sim_data(filename)
 
         pts_2d = project_points(pts_2d, K)
         line_2d = project_lines(line_2d, K)
 
-        poses = pnpl(pts_2d=pts_2d, line_2d=line_2d,
-                     pts_3d=pts_3d, line_3d=line_3d, K=K, max_iters=2500)
-
-        if poses:
+        try:
+            poses = pnpl(pts_2d=pts_2d, line_2d=line_2d,
+                         pts_3d=pts_3d, line_3d=line_3d, K=K, max_iters=2500)
             R, t = poses[0]
-        else:
+        except Exception as e:
+            print(f"Error processing file {filename}: {e}")
             R = np.eye(3)
             t = np.zeros(3)
-            print("No pose found!")
 
         R_list.append(R)
         t_list.append(t)
         times.append(time)
     save_trajectory_euroc(R_list, t_list, times, data_path + output)
-    print(f"Trajectory saved to {output}")
+    print(f"Trajectory saved to {data_path + output}")
 
 
 if __name__ == "__main__":

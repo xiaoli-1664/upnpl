@@ -22,10 +22,66 @@ using namespace Eigen;
 namespace utils {
 struct Camera {
     int id;
-    bool isStereo;
-    cv::Matx33d K;
+    double fx, fy, cx, cy;
+    string distortion_model;
+    vector<double> distortion_coeffs;
+    array<double, 2> image_size; // width, height
     Eigen::Isometry3d T_bc;
-    cv::Size image_size;
+
+    cv::Mat map1, map2;
+
+    bool need_rictified = false;
+
+    void backProjectPixel(double u, double v, Eigen::Vector3d &point) const {
+        point(0) = (u - cx) / fx;
+        point(1) = (v - cy) / fy;
+        point(2) = 1.0; // Assuming unit depth for back-projection
+    }
+
+    void getRectifiedFisheyeCamera() {
+        cv::Size image_size_cv(image_size[0], image_size[1]);
+
+        cv::Mat K = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+        cv::Mat D = cv::Mat(distortion_coeffs);
+
+        cv::Mat R = cv::Mat::eye(3, 3, CV_64F);
+
+        cv::Mat newK;
+
+        double alpha = 1.0;
+
+        cv::fisheye::estimateNewCameraMatrixForUndistortRectify(
+            K, D, image_size_cv, R, newK, alpha);
+
+        fx = newK.at<double>(0, 0);
+        fy = newK.at<double>(1, 1);
+        cx = newK.at<double>(0, 2);
+        cy = newK.at<double>(1, 2);
+
+        cv::fisheye::initUndistortRectifyMap(K, D, R, newK, image_size_cv,
+                                             CV_32FC1, map1, map2);
+        need_rictified = true;
+    }
+
+    void getRecitifiedPinholeCamera() {
+        cv::Size image_size_cv(image_size[0], image_size[1]);
+        cv::Mat K = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+        cv::Mat D = cv::Mat(distortion_coeffs);
+
+        cv::Mat newK;
+        double alpha = 1.0;
+
+        newK = cv::getOptimalNewCameraMatrix(K, D, image_size_cv, alpha,
+                                             image_size_cv);
+
+        cv::initUndistortRectifyMap(K, distortion_coeffs, cv::Mat(), newK,
+                                    image_size_cv, CV_32FC1, map1, map2);
+        fx = newK.at<double>(0, 0);
+        fy = newK.at<double>(1, 1);
+        cx = newK.at<double>(0, 2);
+        cy = newK.at<double>(1, 2);
+        need_rictified = true;
+    }
 };
 
 struct Point3D {
@@ -37,6 +93,26 @@ struct Line3D {
     Eigen::Vector3d p1, p2;
     int id;
 };
+
+void randomEndPoints(Eigen::VectorXd &lines, bool is_random) {
+    if (!is_random)
+        return;
+    Eigen::Vector3d p1 = lines.head<3>();
+    Eigen::Vector3d p2 = lines.tail<3>();
+    Eigen::Vector3d v = (p2 - p1).normalized();
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<> dist(-10, 10);
+    double t1 = dist(gen);
+    double t2 = dist(gen);
+    while (abs(t1 - t2) < 1e-6) {
+        t2 = dist(gen);
+    }
+    Eigen::Vector3d pt_w_1 = p1 + t1 * v;
+    Eigen::Vector3d pt_w_2 = p2 + t2 * v;
+    lines.head<3>() = pt_w_1;
+    lines.tail<3>() = pt_w_2;
+}
 
 class Simulator {
   public:
@@ -98,10 +174,14 @@ void Simulator::setupCameras() {
     cameras_.resize(num_cams_);
     for (int i = 0; i < num_cams_; ++i) {
         Camera &cam = cameras_[i];
+        cam.distortion_coeffs.resize(4, 0.0);
         cam.id = i;
-        cam.isStereo = (i < 2);
-        cam.K = cv::Matx33d(450, 0, 376, 0, 450, 240, 0, 0, 1);
-        cam.image_size = cv::Size(752, 480);
+        cam.fx = 450;
+        cam.fy = 450;
+        cam.cx = 376;
+        cam.cy = 240;
+        cam.image_size[0] = 752;
+        cam.image_size[1] = 480;
 
         cam.T_bc = Eigen::Isometry3d::Identity();
         if (i == 1)
@@ -162,8 +242,8 @@ Eigen::Vector2d Simulator::projectWithNoise(const Eigen::Vector3d &pt_b,
     Eigen::Vector3d pt_c = cam.T_bc.inverse() * pt_b;
 
     Eigen::Vector2d uv;
-    uv(0) = cam.K(0, 0) * pt_c(0) / pt_c(2) + cam.K(0, 2);
-    uv(1) = cam.K(1, 1) * pt_c(1) / pt_c(2) + cam.K(1, 2);
+    uv(0) = cam.fx * pt_c(0) / pt_c(2) + cam.cx;
+    uv(1) = cam.fy * pt_c(1) / pt_c(2) + cam.cy;
     // Add noise
     uv(0) += noise_(rng_);
     uv(1) += noise_(rng_);
@@ -196,8 +276,8 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
             // if (i != 2)
             //     continue;
             Eigen::Vector2d uv = projectWithNoise(pt_b.pt, cam);
-            if (uv(0) < 0 || uv(0) >= cam.image_size.width || uv(1) < 0 ||
-                uv(1) >= cam.image_size.height) {
+            if (uv(0) < 0 || uv(0) >= cam.image_size[0] || uv(1) < 0 ||
+                uv(1) >= cam.image_size[1]) {
                 continue; // Skip points outside image bounds
             }
             Eigen::Vector3d pt_w = T_bw_gt_.inverse() * pt_b.pt;
@@ -210,28 +290,19 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
             //     continue;
             Eigen::Vector2d uv1 = projectWithNoise(line_b.p1, cam);
             Eigen::Vector2d uv2 = projectWithNoise(line_b.p2, cam);
-            if (uv1(0) < 0 || uv1(0) >= cam.image_size.width || uv1(1) < 0 ||
-                uv1(1) >= cam.image_size.height || uv2(0) < 0 ||
-                uv2(0) >= cam.image_size.width || uv2(1) < 0 ||
-                uv2(1) >= cam.image_size.height) {
+            if (uv1(0) < 0 || uv1(0) >= cam.image_size[0] || uv1(1) < 0 ||
+                uv1(1) >= cam.image_size[1] || uv2(0) < 0 ||
+                uv2(0) >= cam.image_size[0] || uv2(1) < 0 ||
+                uv2(1) >= cam.image_size[1]) {
                 continue; // Skip lines with endpoints outside image bounds
             }
             Eigen::Vector3d pt_w1 = T_bw_gt_.inverse() * line_b.p1;
             Eigen::Vector3d pt_w2 = T_bw_gt_.inverse() * line_b.p2;
-            Eigen::Vector3d v = (pt_w2 - pt_w1).normalized();
-            random_device rd;
-            mt19937 gen(rd());
-            uniform_real_distribution<> dist(-10, 10);
-            double t1 = dist(gen);
-            double t2 = dist(gen);
-            while (abs(t1 - t2) < 1e-6) {
-                t2 = dist(gen);
-            }
-            Eigen::Vector3d pt_w_1 = pt_w1 + t1 * v;
-            Eigen::Vector3d pt_w_2 = pt_w2 + t2 * v;
-            Eigen::VectorXd line(6);
-            line.head<3>() = pt_w_1;
-            line.tail<3>() = pt_w_2;
+            Eigen::VectorXd line;
+            line.resize(6);
+            line.head<3>() = pt_w1;
+            line.tail<3>() = pt_w2;
+            randomEndPoints(line, true);
             lines_w.push_back(line);
 
             Eigen::Vector3d pt_c1 = Unproject(uv1, cam);
@@ -250,8 +321,8 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
 Eigen::Vector3d Simulator::Unproject(const Eigen::Vector2d &uv,
                                      const Camera &cam) {
     Eigen::Vector3d pt_c;
-    pt_c(0) = (uv(0) - cam.K(0, 2)) / cam.K(0, 0);
-    pt_c(1) = (uv(1) - cam.K(1, 2)) / cam.K(1, 1);
+    pt_c(0) = (uv(0) - cam.cx) / cam.fx;
+    pt_c(1) = (uv(1) - cam.cy) / cam.fy;
     pt_c(2) = 1.0; // Assume unit depth for simplicity
     return pt_c;
 }
@@ -272,7 +343,8 @@ Eigen::Isometry3d myUPnPL(const vector<Eigen::Vector3d> &points_w_tmp,
                           const vector<Eigen::VectorXd> &lines_c_tmp,
                           const vector<int> &points_cam_tmp,
                           const vector<int> &lines_cam_tmp,
-                          const vector<Camera> &cameras, int num_cam) {
+                          const vector<Camera> &cameras, int num_cam,
+                          double &used_time) {
     UPnPL::UPnPL upnpl_solver(true);
     Eigen::Matrix3d R_bw;
     Eigen::Vector3d t_bw;
@@ -309,9 +381,17 @@ Eigen::Isometry3d myUPnPL(const vector<Eigen::Vector3d> &points_w_tmp,
         }
     }
 
+    Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
+    auto start = chrono::high_resolution_clock::now();
+    if (points_w.size() + lines_w.size() < 4) {
+        used_time = 0.0;
+        return T_bw;
+    }
     upnpl_solver.solveMain(points_w, lines_w, uv_c, lines_c, points_cam,
                            lines_cam, R_bc, t_bc, R_bw, t_bw);
-    Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, std::milli> elapsed = end - start;
+    used_time = elapsed.count();
     T_bw.linear() = R_bw;
     T_bw.translation() = t_bw;
     return T_bw;
@@ -320,7 +400,7 @@ Eigen::Isometry3d myUPnPL(const vector<Eigen::Vector3d> &points_w_tmp,
 Eigen::Isometry3d cv_EPnP(const vector<Eigen::Vector3d> &points_w,
                           const vector<Eigen::Vector3d> &uv_c,
                           const vector<int> &points_cam,
-                          const vector<Camera> &cameras) {
+                          const vector<Camera> &cameras, double &used_time) {
     // Prepare OpenCV data structures
     vector<cv::Point3f> object_points;
     vector<cv::Point2f> image_points;
@@ -330,42 +410,52 @@ Eigen::Isometry3d cv_EPnP(const vector<Eigen::Vector3d> &points_w,
         if (points_cam[i] == cam) {
             object_points.emplace_back(points_w[i](0), points_w[i](1),
                                        points_w[i](2));
-            double u = cameras[cam].K(0, 0) * uv_c[i](0) / uv_c[i](2) +
-                       cameras[cam].K(0, 2);
-            double v = cameras[cam].K(1, 1) * uv_c[i](1) / uv_c[i](2) +
-                       cameras[cam].K(1, 2);
+            double u =
+                cameras[cam].fx * uv_c[i](0) / uv_c[i](2) + cameras[cam].cx;
+            double v =
+                cameras[cam].fy * uv_c[i](1) / uv_c[i](2) + cameras[cam].cy;
             // image_points.emplace_back(u, v);
             image_points.emplace_back(uv_c[i](0) / uv_c[i](2),
                                       uv_c[i](1) / uv_c[i](2));
         }
     }
 
-    cv::Mat camera_matrix = (cv::Mat_<double>(3, 3) << cameras[cam].K(0, 0), 0,
-                             cameras[cam].K(0, 2), 0, cameras[cam].K(1, 1),
-                             cameras[cam].K(1, 2), 0, 0, 1);
+    cv::Mat camera_matrix =
+        (cv::Mat_<double>(3, 3) << cameras[cam].fx, 0, cameras[cam].cx, 0,
+         cameras[cam].fy, cameras[cam].cy, 0, 0, 1);
     camera_matrix = cv::Mat::eye(3, 3, CV_64F);
     cv::Mat dist_coeffs = cv::Mat::zeros(5, 1, CV_64F);
     Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
 
     if (object_points.size() < 4) {
+        used_time = 0.0;
         return T_bw; // Not enough points for EPnP
     }
 
     cv::Mat rvec, tvec;
-    bool success =
-        cv::solvePnP(object_points, image_points, camera_matrix, dist_coeffs,
-                     rvec, tvec, false, cv::SOLVEPNP_EPNP);
+    auto start = chrono::high_resolution_clock::now();
+    try {
+        bool success =
+            cv::solvePnP(object_points, image_points, camera_matrix,
+                         dist_coeffs, rvec, tvec, false, cv::SOLVEPNP_EPNP);
+        auto end = chrono::high_resolution_clock::now();
+        chrono::duration<double, std::milli> elapsed = end - start;
+        used_time = elapsed.count();
 
-    if (success) {
-        Eigen::Isometry3d T_cw_epnp;
-        cv::Mat R_epnp;
-        cv::Rodrigues(rvec, R_epnp);
-        T_cw_epnp.linear() = cvMatToEigen(R_epnp);
-        T_cw_epnp.translation() = Eigen::Vector3d(
-            tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
-        Eigen::Isometry3d T_bc = cameras[cam].T_bc;
+        if (success) {
+            Eigen::Isometry3d T_cw_epnp;
+            cv::Mat R_epnp;
+            cv::Rodrigues(rvec, R_epnp);
+            T_cw_epnp.linear() = cvMatToEigen(R_epnp);
+            T_cw_epnp.translation() = Eigen::Vector3d(
+                tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
+            Eigen::Isometry3d T_bc = cameras[cam].T_bc;
 
-        T_bw = T_bc * T_cw_epnp;
+            T_bw = T_bc * T_cw_epnp;
+        }
+    } catch (const cv::Exception &e) {
+        used_time = 0.0;
+        return T_bw; // Handle exceptions gracefully
     }
 
     return T_bw;
@@ -374,7 +464,8 @@ Eigen::Isometry3d cv_EPnP(const vector<Eigen::Vector3d> &points_w,
 Eigen::Isometry3d opengv_UPnP(const vector<Eigen::Vector3d> &points_w,
                               const vector<Eigen::Vector3d> &uv_c,
                               const vector<int> &points_cam,
-                              const vector<Camera> &cameras) {
+                              const vector<Camera> &cameras,
+                              double &used_time) {
     bearingVectors_t bearingVectors;
     points_t points;
     vector<int> cam_correspondences;
@@ -395,24 +486,34 @@ Eigen::Isometry3d opengv_UPnP(const vector<Eigen::Vector3d> &points_w,
         rotations.push_back(cam.T_bc.linear());
     }
 
-    absolute_pose::NoncentralAbsoluteAdapter adapter(
-        bearingVectors, cam_correspondences, points, translations, rotations);
+    try {
+        auto start = chrono::high_resolution_clock::now();
+        absolute_pose::NoncentralAbsoluteAdapter adapter(
+            bearingVectors, cam_correspondences, points, translations,
+            rotations);
 
-    transformations_t T = absolute_pose::upnp(adapter, indices);
-    Eigen::Matrix<double, 3, 4> T_matrix = T[0];
-    Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
-    T_bw.linear() = T_matrix.block<3, 3>(0, 0);
-    T_bw.translation() = T_matrix.block<3, 1>(0, 3);
-    return T_bw.inverse();
+        transformations_t T = absolute_pose::upnp(adapter, indices);
+        auto end = chrono::high_resolution_clock::now();
+        chrono::duration<double, std::milli> elapsed = end - start;
+        used_time = elapsed.count();
+
+        Eigen::Matrix<double, 3, 4> T_matrix = T[0];
+        Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
+        T_bw.linear() = T_matrix.block<3, 3>(0, 0);
+        T_bw.translation() = T_matrix.block<3, 1>(0, 3);
+        return T_bw.inverse();
+    } catch (const std::exception &e) {
+        used_time = 0.0;
+        return Eigen::Isometry3d::Identity(); // Return identity if error occurs
+    }
 }
 
-void saveDataForMatlab(const vector<Eigen::Vector3d> &points_w,
-                       const vector<Eigen::VectorXd> &lines_w,
-                       const vector<Eigen::Vector3d> &uv_c,
-                       const vector<Eigen::VectorXd> &lines_c,
-                       const vector<int> &points_cam,
-                       const vector<int> &lines_cam, const string &filename,
-                       const double time) {
+void saveDataForMatlab(
+    const vector<Eigen::Vector3d> &points_w, const vector<double> &points_sigma,
+    const vector<Eigen::VectorXd> &lines_w, const vector<double> &lines_sigma,
+    const vector<Eigen::Vector3d> &uv_c, const vector<Eigen::VectorXd> &lines_c,
+    const vector<int> &points_cam, const vector<int> &lines_cam,
+    const string &filename, const double time) {
     int cam = 0;
     fs::path output_path(filename);
     if (!fs::exists(output_path.parent_path())) {
@@ -426,13 +527,16 @@ void saveDataForMatlab(const vector<Eigen::Vector3d> &points_w,
     }
 
     vector<Eigen::Vector3d> points_w_cam;
+    vector<int> points_level_cam;
     vector<Eigen::VectorXd> lines_w_cam;
+    vector<int> lines_level_cam;
     vector<Eigen::Vector3d> uv_c_cam;
     vector<Eigen::VectorXd> lines_c_cam;
 
     for (int i = 0; i < points_w.size(); ++i) {
         if (points_cam[i] == cam) {
             points_w_cam.push_back(points_w[i]);
+            points_level_cam.push_back(points_sigma[i]);
             Eigen::Vector3d uv = uv_c[i];
             uv /= uv_c[i](2); // Normalize by depth
             uv_c_cam.push_back(uv);
@@ -441,6 +545,7 @@ void saveDataForMatlab(const vector<Eigen::Vector3d> &points_w,
     for (int i = 0; i < lines_w.size(); ++i) {
         if (lines_cam[i] == cam) {
             lines_w_cam.push_back(lines_w[i]);
+            lines_level_cam.push_back(lines_sigma[i]);
             lines_c_cam.push_back(lines_c[i]);
         }
     }
@@ -453,14 +558,14 @@ void saveDataForMatlab(const vector<Eigen::Vector3d> &points_w,
 
     for (int i = 0; i < points_w_cam.size(); ++i) {
         ofs << points_w_cam[i].transpose() << " " << uv_c_cam[i].transpose()
-            << endl;
+            << " " << points_sigma[i] << endl;
     }
 
     ofs << lines_w_cam.size() << endl;
 
     for (int i = 0; i < lines_w_cam.size(); ++i) {
         ofs << lines_w_cam[i].transpose() << " " << lines_c_cam[i].transpose()
-            << endl;
+            << " " << lines_sigma[i] << endl;
     }
 }
 
