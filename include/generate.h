@@ -108,9 +108,8 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                       vector<double> &lines_sigma,
                       vector<Eigen::Vector3d> &uv_c,
                       vector<Eigen::VectorXd> &lines_c, vector<int> &points_cam,
-                      vector<int> &lines_cam) {
+                      vector<int> &lines_cam, int num_features) {
     int num_cameras = cameras.size();
-    const int num_features = 200;
 
     for (int cam_id = 1; cam_id < num_cameras; ++cam_id) {
         const Camera &camera = cameras[cam_id];
@@ -259,9 +258,13 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                 point_w(2) =
                     points4D.at<double>(2, col) / points4D.at<double>(3, col);
 
-                if (point_w.norm() < 0.1 || point_w.norm() > 100.0) {
+                if (points4D.at<double>(3, col) < 1e-8)
                     continue; // Skip invalid points
-                }
+                //
+
+                // if (point_w.norm() < 0.1 || point_w.norm() > 100.0) {
+                //     continue; // Skip invalid points
+                // }
 
                 points_w.push_back(point_w);
                 points_cam.push_back(cam_id);
@@ -318,9 +321,12 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                                  points4D.at<double>(3, col);
                     point_w(2) = points4D.at<double>(2, col) /
                                  points4D.at<double>(3, col);
-                    if (point_w.norm() < 0.1 || point_w.norm() > 100.0) {
-                        continue; // Skip invalid points
-                    }
+                    if (points4D.at<double>(3, col) < 1e-8)
+                        continue;
+                    // if (point_w.norm() < 0.1 || point_w.norm()
+                    // > 100.0) {
+                    //     continue; // Skip invalid points
+                    // }
 
                     points_w.push_back(point_w);
                     int octave = keypoints0_next[match.trainIdx].octave;

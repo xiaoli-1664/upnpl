@@ -35,3 +35,5 @@ target_link_libraries(sim_test UPnPL opengv)
 add_executable(euroc_test src/euroc_test.cc)
 target_link_libraries(euroc_test UPnPL yaml-cpp opengv)
 
+add_executable(kitti_test src/kitti_test.cc)
+target_link_libraries(kitti_test UPnPL yaml-cpp opengv)

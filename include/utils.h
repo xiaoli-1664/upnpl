@@ -9,6 +9,7 @@
 #include <opengv/absolute_pose/methods.hpp>
 
 #include <opencv2/calib3d.hpp>
+#include <opencv2/ccalib/omnidir.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "UPnPL.h"
@@ -25,6 +26,8 @@ struct Camera {
     double fx, fy, cx, cy;
     string distortion_model;
     vector<double> distortion_coeffs;
+    double xi;
+    vector<double> projection_parameters;
     array<double, 2> image_size; // width, height
     Eigen::Isometry3d T_bc;
 
@@ -81,6 +84,28 @@ struct Camera {
         cx = newK.at<double>(0, 2);
         cy = newK.at<double>(1, 2);
         need_rictified = true;
+    }
+
+    void getRecitifiedMeiCamera() {
+        cv::Size new_image_size(1400, 1400);
+        cv::Mat K = (cv::Mat_<double>(3, 3) << projection_parameters[0], 0,
+                     projection_parameters[2], 0, projection_parameters[1],
+                     projection_parameters[3], 0, 0, 1);
+        cv::Mat D = cv::Mat(distortion_coeffs);
+
+        cv::Mat R = cv::Mat::eye(3, 3, CV_64F);
+
+        cv::Mat newK = (cv::Mat_<double>(3, 3) << new_image_size.width / 4, 0,
+                        new_image_size.width / 2, 0, new_image_size.height / 4,
+                        new_image_size.height / 2, 0, 0, 1);
+        fx = newK.at<double>(0, 0);
+        fy = newK.at<double>(1, 1);
+        cx = newK.at<double>(0, 2);
+        cy = newK.at<double>(1, 2);
+        need_rictified = true;
+        cv::omnidir::initUndistortRectifyMap(K, D, xi, R, newK, new_image_size,
+                                             CV_32FC1, map1, map2,
+                                             cv::omnidir::RECTIFY_PERSPECTIVE);
     }
 };
 
