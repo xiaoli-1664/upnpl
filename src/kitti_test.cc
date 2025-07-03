@@ -84,6 +84,39 @@ void saveIsometry3dList(const vector<Eigen::Isometry3d> &T_list,
     fout << out.c_str();
 }
 
+void saveCameraParameters(const string &filename, const Camera &camera) {
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    out << YAML::Key << "T_BS";
+    out << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "cols" << YAML::Value << 4;
+    out << YAML::Key << "rows" << YAML::Value << 4;
+
+    out << YAML::Key << "data" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
+            out << camera.T_bc.matrix()(i, j);
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+    out << YAML::EndMap;
+
+    out << YAML::BeginMap;
+    out << YAML::Key << "intrinsics" << YAML::Value << YAML::Flow
+        << YAML::BeginSeq;
+    out << camera.fx << camera.fy << camera.cx << camera.cy;
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+
+    fs::path output_path(filename);
+    if (!fs::exists(output_path.parent_path())) {
+        fs::create_directories(output_path.parent_path());
+    }
+
+    ofstream fout(filename);
+    fout << out.c_str();
+    fout.close();
+}
+
 Eigen::Isometry3d vectorToIsometry3d(const vector<double> &vec) {
     if (vec.size() != 16 && vec.size() != 12) {
         cerr << "Error: Vector size must be 16 or 12 for Isometry3d conversion."
@@ -360,8 +393,8 @@ int main(int argc, char **argv) {
         Tbc[i] = cameras[i].T_bc;
     }
 
-    string extrinsic_file_out = kitti_path + "calibration/sensors.yaml";
-    saveIsometry3dList(Tbc, extrinsic_file_out);
+    string camera_file = kitti_path + seq + "/cam0/sensor.yaml";
+    saveCameraParameters(camera_file, cameras[0]);
 
     vector<double> times_save;
     vector<Eigen::Isometry3d> Twb_upnpl;

@@ -91,7 +91,7 @@ def load_camera_intrinsics(yaml_path, default_intrinsics=None):
     if not yaml_file.exists():
         print(
             f"Warning: YAML file '{yaml_path}' not found. Using default intrinsics.")
-        return default_intrinsics
+        return 0, default_intrinsics, np.eye(4)
 
     # 读取 YAML 文件
     try:
@@ -102,19 +102,22 @@ def load_camera_intrinsics(yaml_path, default_intrinsics=None):
         intrinsics = data.get('intrinsics')
         if intrinsics is None:
             print("Warning: 'intrinsics' key not found in YAML. Using default values.")
-            return default_intrinsics
+            return 0, default_intrinsics, np.eye(4)
+
+        Tbc = data['T_BS']['data']
+        Tbc = np.array(Tbc).reshape(4, 4)
 
         # 检查内参格式是否正确
         if len(intrinsics) != 4:
             print(
                 f"Warning: Expected 4 values in 'intrinsics', got {len(intrinsics)}. Using defaults.")
-            return default_intrinsics
+            return 0, default_intrinsics, np.eye(4)
 
-        return intrinsics
+        return 1, intrinsics, Tbc
 
     except Exception as e:
         print(f"Error loading YAML file: {e}. Using default intrinsics.")
-        return default_intrinsics
+        return 0, default_intrinsics, np.eye(4)
 
 
 def main():
@@ -137,7 +140,7 @@ def main():
     data_path = args.data_path
     output = "cvxpnpl.txt"
     yaml_file = data_path + "cam0/sensor.yaml"
-    intrinsics = load_camera_intrinsics(yaml_file)
+    sim, intrinsics, Tbc = load_camera_intrinsics(yaml_file)
     K = np.array([[intrinsics[0], 0, intrinsics[2]],
                   [0, intrinsics[1], intrinsics[3]], [0, 0, 1]])
 
@@ -153,6 +156,14 @@ def main():
             poses = pnpl(pts_2d=pts_2d, line_2d=line_2d,
                          pts_3d=pts_3d, line_3d=line_3d, K=K, max_iters=2500)
             R, t = poses[0]
+            Tcw = np.eye(4)
+            Tcw[:3, :3] = R
+            Tcw[:3, 3] = t
+            Tbw = Tbc @ Tcw
+            Twb = np.linalg.inv(Tbw)
+            if sim == 1:
+                R = Twb[:3, :3]
+                t = Twb[:3, 3]
         except Exception as e:
             print(f"Error processing file {filename}: {e}")
             R = np.eye(3)

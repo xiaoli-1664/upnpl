@@ -23,12 +23,28 @@ def read_euroc_format(filepath):
     return np.array(poses)
 
 
-def calculate_ate_translation_error(gt_poses, est_poses):
-    """计算绝对轨迹误差 (ATE) 的平移部分 (无对齐)。"""
-    errors = np.linalg.norm(gt_poses[:, :3] - est_poses[:, :3], axis=1)
+def calculate_ate_translation_error(gt_poses, est_poses, threshold=1e6):
+    """计算绝对轨迹误差 (ATE) 的平移部分 (无对齐)，跳过 NaN 和数值过大的帧。"""
+    est_trans = est_poses[:, :3]
+    gt_trans = gt_poses[:, :3]
+
+    valid_mask = (
+        ~np.isnan(est_trans).any(axis=1) &
+        (np.linalg.norm(est_trans, axis=1) < threshold)
+    )
+
+    valid_gt = gt_trans[valid_mask]
+    valid_est = est_trans[valid_mask]
+
+    if len(valid_gt) == 0:
+        print("所有估计平移都无效，无法计算误差。")
+        return np.nan
+
+    errors = np.linalg.norm(valid_gt - valid_est, axis=1)
     max_error = np.max(errors)
     max_index = np.argmax(errors)
-    print(f"最大平移误差: {max_error:.4f} 米 (发生在索引 {max_index})")
+    print(
+        f"最大平移误差: {max_error:.4f} 米 (发生在索引 {np.where(valid_mask)[0][max_index]})")
     return np.mean(errors)
 
 
