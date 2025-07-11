@@ -1,7 +1,7 @@
 #!/bin/bash
 
-./build/kitti_test 0000
-./build/kitti_test 0002
+# ./build/kitti_test 0000
+# ./build/kitti_test 0002
 ./build/kitti_test 0003
 ./build/kitti_test 0004
 ./build/kitti_test 0005

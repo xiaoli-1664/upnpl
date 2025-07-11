@@ -5,6 +5,7 @@
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
+#include <opencv2/features2d/features2d.hpp>
 #include <opencv2/line_descriptor.hpp>
 #include <opencv2/opencv.hpp>
 
@@ -212,6 +213,7 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         matcher.knnMatch(descriptors1, descriptors_next, matches_next, 2);
 
         vector<cv::DMatch> good_matches;
+        good_matches.reserve(matches.size());
         for (const auto &match : matches) {
             if (match.size() > 1 &&
                 match[0].distance < 0.75 * match[1].distance) {
@@ -220,6 +222,7 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         }
 
         vector<cv::DMatch> good_matches_next;
+        good_matches_next.reserve(matches_next.size());
         for (const auto &match : matches_next) {
             if (match.size() > 1 &&
                 match[0].distance < 0.75 * match[1].distance) {
@@ -228,6 +231,8 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         }
 
         vector<cv::Point2f> points1, points2;
+        points1.reserve(good_matches.size());
+        points2.reserve(good_matches.size());
         vector<int> indexes1(keypoints1.size(), -1);
         vector<int> indexes2(keypoints2.size(), -1);
         int match_i = 0;
@@ -238,6 +243,11 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             indexes2[match.trainIdx] = match_i;
             match_i++;
         }
+
+        vector<uchar> inliers_mask1;
+        cv::Mat H = cv::findHomography(points1, points2, cv::RANSAC, 3.0,
+                                       inliers_mask1);
+
         cv::Mat points4D;
         cv::Mat pts1_h, pts2_h;
         cv::Mat(points1).convertTo(pts1_h, CV_64F);
@@ -249,6 +259,8 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
 
         for (const auto &match : good_matches_next) {
             int col = indexes1[match.queryIdx];
+            if (!inliers_mask1[col])
+                continue;
             if (col != -1) {
                 Eigen::Vector3d point_w;
                 point_w(0) =
@@ -304,14 +316,28 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             vector<vector<cv::DMatch>> matches0_next;
             matcher.knnMatch(descriptors2, descriptors0_next, matches0_next, 2);
             vector<cv::DMatch> good_matches0_next;
+            vector<cv::Point2f> pt_2_tmp;
+            vector<cv::Point2f> pt_0_next;
+            good_matches0_next.reserve(matches0_next.size());
+            pt_2_tmp.reserve(matches0_next.size());
+            pt_0_next.reserve(matches0_next.size());
             for (const auto &match : matches0_next) {
                 if (match.size() > 1 &&
                     match[0].distance < 0.75 * match[1].distance) {
                     good_matches0_next.push_back(match[0]);
+                    pt_2_tmp.push_back(keypoints2[match[0].queryIdx].pt);
+                    pt_0_next.push_back(keypoints0_next[match[0].trainIdx].pt);
                 }
             }
 
-            for (const auto &match : good_matches0_next) {
+            vector<uchar> inliers_mask0_next;
+            cv::Mat H0_next = cv::findHomography(
+                pt_2_tmp, pt_0_next, cv::RANSAC, 3.0, inliers_mask0_next);
+
+            for (int i1 = 0; i1 < good_matches0_next.size(); ++i1) {
+                const auto &match = good_matches0_next[i1];
+                if (!inliers_mask0_next[i1])
+                    continue;
                 int col = indexes2[match.queryIdx];
                 if (col != -1) {
                     Eigen::Vector3d point_w;
@@ -369,6 +395,7 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                              2);
 
         vector<cv::DMatch> good_lbd_matches;
+        good_lbd_matches.reserve(lbd_matches.size());
         for (const auto &match : lbd_matches) {
             if (match.size() > 1 &&
                 match[0].distance < 0.75 * match[1].distance) {
@@ -377,6 +404,8 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
         }
 
         vector<Eigen::Vector3d> normals_c_tmp, normals_c1_tmp;
+        normals_c_tmp.reserve(good_lbd_matches.size());
+        normals_c1_tmp.reserve(good_lbd_matches.size());
         vector<int> keyline_indexes1(keylines1.size(), -1);
         vector<int> keyline_indexes2(keylines2.size(), -1);
         match_i = 0;
@@ -423,6 +452,7 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
                                   lbd_matches_next, 2);
 
         vector<cv::DMatch> good_lbd_matches_next;
+        good_lbd_matches_next.reserve(lbd_matches_next.size());
         for (const auto &match : lbd_matches_next) {
             if (match.size() > 1 &&
                 match[0].distance < 0.75 * match[1].distance) {
@@ -470,6 +500,7 @@ void generatePnPLData(int index, const vector<vector<string>> &image_files,
             lbd_matcher_next.knnMatch(lbd_descriptors2, lbd_descriptors0_next,
                                       lbd_matches0_next, 2);
             vector<cv::DMatch> good_lbd_matches0_next;
+            good_lbd_matches0_next.reserve(lbd_matches0_next.size());
             for (const auto &match : lbd_matches0_next) {
                 if (match.size() > 1 &&
                     match[0].distance < 0.75 * match[1].distance) {

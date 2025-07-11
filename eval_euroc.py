@@ -23,24 +23,20 @@ def read_euroc_format(filepath):
     return np.array(poses)
 
 
-def calculate_ate_translation_error(gt_poses, est_poses, threshold=1e6):
+def calculate_ate_translation_error(gt_poses, est_poses, threshold=1000):
     """计算绝对轨迹误差 (ATE) 的平移部分 (无对齐)，跳过 NaN 和数值过大的帧。"""
     est_trans = est_poses[:, :3]
     gt_trans = gt_poses[:, :3]
 
-    valid_mask = (
-        ~np.isnan(est_trans).any(axis=1) &
-        (np.linalg.norm(est_trans, axis=1) < threshold)
-    )
+    # valid_mask = (
+    #     ~np.isnan(est_trans).any(axis=1) &
+    #     (np.linalg.norm(est_trans, axis=1) < threshold)
+    # )
 
-    valid_gt = gt_trans[valid_mask]
-    valid_est = est_trans[valid_mask]
+    errors = np.linalg.norm(gt_trans - est_trans, axis=1)
+    valid_mask = (~np.isnan(errors)) & (errors < threshold)
+    errors = errors[valid_mask]
 
-    if len(valid_gt) == 0:
-        print("所有估计平移都无效，无法计算误差。")
-        return np.nan
-
-    errors = np.linalg.norm(valid_gt - valid_est, axis=1)
     max_error = np.max(errors)
     max_index = np.argmax(errors)
     print(
@@ -53,26 +49,14 @@ def calculate_are_rotation_error(gt_poses, est_poses):
     rotation_errors_deg = []
     for i in range(len(gt_poses)):
         R_true = R.from_quat(gt_poses[i, 3:]).as_matrix()
-        R_est = R.from_quat(est_poses[i, 3:]).as_matrix()
+        try:
+            R_est = R.from_quat(est_poses[i, 3:]).as_matrix()
+        except ValueError:
+            R_est = np.eye(3)  # 如果估计的四元数无效，使用单位矩阵
         R_error = R_true.T @ R_est
         trace = np.trace(R_error)
         arg = np.clip(0.5 * (trace - 1.0), -1.0, 1.0)
         angle_rad = np.arccos(arg)
-        rotation_errors_deg.append(np.rad2deg(angle_rad))
-    return np.mean(rotation_errors_deg)
-
-
-def calculate_rpe_rotation_error(gt_poses, est_poses):
-    rotation_errors_deg = []
-    for i in range(len(gt_poses) - 1):
-        gt_rot_i = R.from_quat(gt_poses[i, 3:])
-        gt_rot_j = R.from_quat(gt_poses[i+1, 3:])
-        est_rot_i = R.from_quat(est_poses[i, 3:])
-        est_rot_j = R.from_quat(est_poses[i+1, 3:])
-        gt_relative_rot = gt_rot_i.inv() * gt_rot_j
-        est_relative_rot = est_rot_i.inv() * est_rot_j
-        error_rot = est_relative_rot.inv() * gt_relative_rot
-        angle_rad = np.linalg.norm(error_rot.as_rotvec())
         rotation_errors_deg.append(np.rad2deg(angle_rad))
     return np.mean(rotation_errors_deg)
 
@@ -108,20 +92,20 @@ def main():
         # 1. ATE (平移)
         ate_mae = calculate_ate_translation_error(gt_poses, est_poses)
         print("1. 平均绝对平移误差 (ATE - Unaligned)")
-        print(f"   描述: 衡量原始轨迹间的直接平移距离，结果受初始位姿和累积漂移共同影响。")
+        # print(f"   描述: 衡量原始轨迹间的直接平移距离，结果受初始位姿和累积漂移共同影响。")
         print(f"   结果: {ate_mae:.4f} 米\n")
 
         # 2. ARE (旋转)
         are_mae = calculate_are_rotation_error(gt_poses, est_poses)
         print("2. 平均绝对旋转误差 (ARE - Unaligned)")
-        print(f"   描述: 衡量原始轨迹间每个时间点上姿态的直接旋转误差。")
+        # print(f"   描述: 衡量原始轨迹间每个时间点上姿态的直接旋转误差。")
         print(f"   结果: {are_mae:.4f} 度\n")
 
-        # 3. RPE (旋转)
-        rpe_mae_rot = calculate_rpe_rotation_error(gt_poses, est_poses)
-        print("3. 平均相对旋转误差 (RPE)")
-        print(f"   描述: 衡量连续位姿之间相对运动的旋转精度（局部精度）。")
-        print(f"   结果: {rpe_mae_rot:.4f} 度\n")
+        # # 3. RPE (旋转)
+        # rpe_mae_rot = calculate_rpe_rotation_error(gt_poses, est_poses)
+        # print("3. 平均相对旋转误差 (RPE)")
+        # print(f"   描述: 衡量连续位姿之间相对运动的旋转精度（局部精度）。")
+        # print(f"   结果: {rpe_mae_rot:.4f} 度\n")
 
     except FileNotFoundError as e:
         print(f"\n[错误] 文件未找到: {e.filename}")

@@ -6,7 +6,7 @@ using namespace Eigen;
 
 int main(int argc, char **argv) {
     bool save = true;
-    if (argc != 4) {
+    if (argc != 5) {
         cerr << "Usage: " << argv[0] << " <num_points> <num_lines> <noise_std>"
              << endl;
         return 1;
@@ -14,6 +14,8 @@ int main(int argc, char **argv) {
     int point_num = atoi(argv[1]);
     int line_num = atoi(argv[2]);
     int noise_std = atoi(argv[3]);
+
+    int iter = atoi(argv[4]);
     string output_dir = "./simulated/" + to_string(point_num) + "_" +
                         to_string(line_num) + "_" + to_string(noise_std) + "/";
     string upnpl_4cam_output_file =
@@ -43,7 +45,6 @@ int main(int argc, char **argv) {
     double avg_upupl_4cam = 0.0;
     double avg_epnp = 0.0;
     double avg_upnp = 0.0;
-    int iter = 10000;
     for (int i = 0; i < iter; ++i) {
         string simulated_data =
             output_dir + "data/data_" + to_string(i) + ".txt";

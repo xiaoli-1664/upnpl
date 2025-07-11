@@ -259,8 +259,8 @@ void loadKittiMeiCameraParameters(const string &cam2_file,
 
 void loadKittiImage(const string &image_path, const string &time_file,
                     const string &gt_file, vector<string> &image_files,
-                    vector<double> &times,
-                    vector<Eigen::Isometry3d> &poses_gt) {
+                    vector<double> &times, vector<Eigen::Isometry3d> &poses_gt,
+                    bool is_02 = false) {
     ifstream time_ifs(time_file);
     ifstream gt_ifs(gt_file);
     if (!time_ifs.is_open()) {
@@ -275,12 +275,14 @@ void loadKittiImage(const string &image_path, const string &time_file,
 
     string line;
     int i = 0;
+    if (is_02)
+        i = 4391;
     vector<double> times_tmp;
     vector<string> image_files_tmp;
     while (getline(time_ifs, line)) {
         double time = timestampStringToDouble(line);
         times_tmp.push_back(time);
-        string image_file = image_path + formatSerialNumber(i) + ".png";
+        string image_file = image_path + formatSerialNumber(i++) + ".png";
         image_files_tmp.push_back(image_file);
     }
 
@@ -344,6 +346,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     string seq = "2013_05_28_drive_" + string(argv[1]) + "_sync";
+    bool is_02 = stoi(argv[1]) == 2;
     string kitti_path = "/home/ljj/dataset/kitti-360/";
 
     string upnpl_out_file = kitti_path + seq + "/upnpl" + ".txt";
@@ -375,13 +378,13 @@ int main(int argc, char **argv) {
     vector<vector<Eigen::Isometry3d>> poses_gt(4);
 
     loadKittiImage(image0_path, time_file, gt_file, image_files[0], times[0],
-                   poses_gt[0]);
+                   poses_gt[0], is_02);
     loadKittiImage(image1_path, time_file, gt_file, image_files[1], times[1],
-                   poses_gt[1]);
+                   poses_gt[1], is_02);
     loadKittiImage(image2_path, time_file, gt_file, image_files[2], times[2],
-                   poses_gt[2]);
+                   poses_gt[2], is_02);
     loadKittiImage(image3_path, time_file, gt_file, image_files[3], times[3],
-                   poses_gt[3]);
+                   poses_gt[3], is_02);
 
     vector<Camera> cameras(4);
     loadKittiStereoCameraParameters(stereo_file, cameras[0], cameras[1]);
@@ -423,7 +426,7 @@ int main(int argc, char **argv) {
         try {
             generatePnPLData(i, image_files, times, poses_gt, cameras, points_w,
                              points_sigma, lines_w, lines_sigma, uv_c, lines_c,
-                             points_cam, lines_cam, 200);
+                             points_cam, lines_cam, 1000);
         } catch (const std::exception &e) {
             cerr << "Error generating data for frame " << i << ": " << e.what()
                  << endl;

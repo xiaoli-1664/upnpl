@@ -1,0 +1,84 @@
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/euroc/MH_01_easy/mav0/gt.csv' (3569 个位姿)
+  估计轨迹: '/home/ljj/dataset/euroc/MH_01_easy/mav0/upnp.csv' (3569 个位姿)
+------------------------------
+最大平移误差: 25.9060 米 (发生在索引 1683)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0533 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.6452 度
+
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/euroc/MH_03_medium/mav0/gt.csv' (2587 个位姿)
+  估计轨迹: '/home/ljj/dataset/euroc/MH_03_medium/mav0/upnp.csv' (2587 个位姿)
+------------------------------
+最大平移误差: 168.6650 米 (发生在索引 1192)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.1661 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 1.6932 度
+
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/euroc/V1_01_easy/mav0/gt.csv' (2801 个位姿)
+  估计轨迹: '/home/ljj/dataset/euroc/V1_01_easy/mav0/upnp.csv' (2801 个位姿)
+------------------------------
+最大平移误差: 420.3594 米 (发生在索引 2088)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 1.6651 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 25.8248 度
+
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/euroc/V1_02_medium/mav0/gt.csv' (1600 个位姿)
+  估计轨迹: '/home/ljj/dataset/euroc/V1_02_medium/mav0/upnp.csv' (1600 个位姿)
+------------------------------
+最大平移误差: 367.1403 米 (发生在索引 1441)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 1.2731 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 19.9971 度
+
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/kitti-360/2013_05_28_drive_0000_sync/gt.txt' (11396 个位姿)
+  估计轨迹: '/home/ljj/dataset/kitti-360/2013_05_28_drive_0000_sync/upnp.txt' (11396 个位姿)
+------------------------------
+最大平移误差: 201.8707 米 (发生在索引 6461)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 2.9797 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 14.3357 度
+
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/kitti-360/2013_05_28_drive_0003_sync/gt.txt' (938 个位姿)
+  估计轨迹: '/home/ljj/dataset/kitti-360/2013_05_28_drive_0003_sync/upnp.txt' (938 个位姿)
+------------------------------
+最大平移误差: 561.6694 米 (发生在索引 308)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 9.7438 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 18.9897 度
+
+
+成功读取文件:
+  真值轨迹: '/home/ljj/dataset/kitti-360/2013_05_28_drive_0004_sync/gt.txt' (11270 个位姿)
+  估计轨迹: '/home/ljj/dataset/kitti-360/2013_05_28_drive_0004_sync/upnp.txt' (11270 个位姿)
+------------------------------
+最大平移误差: 765.6501 米 (发生在索引 6909)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 4.4942 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 28.8908 度
+

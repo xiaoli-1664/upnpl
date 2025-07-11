@@ -204,7 +204,7 @@ int main(int argc, char **argv) {
         try {
             generatePnPLData(i, image_files, times, poses_gt, cameras, points_w,
                              points_sigma, lines_w, lines_sigma, uv_c, lines_c,
-                             points_cam, lines_cam, 200);
+                             points_cam, lines_cam, 800);
         } catch (const std::exception &e) {
             cerr << "Error generating data for frame " << i << ": " << e.what()
                  << endl;

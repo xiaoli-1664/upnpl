@@ -3,6 +3,7 @@ import argparse
 from scipy.spatial.transform import Rotation as R
 from cvxpnpl import pnpl
 import yaml
+import os
 from pathlib import Path
 
 
@@ -144,15 +145,22 @@ def main():
     K = np.array([[intrinsics[0], 0, intrinsics[2]],
                   [0, intrinsics[1], intrinsics[3]], [0, 0, 1]])
 
+    index = 0
     for i in range(0, args.count):
-        filename = data_path + f"data/data_{i}.txt"
+        filename = os.path.join(data_path, f"data/data_{index}.txt")
+
+        while not os.path.exists(filename):
+            index = index + 1
+            filename = os.path.join(data_path, f"data/data_{index}.txt")
+
+        index = index + 1
 
         time, pts_3d, pts_2d, line_3d, line_2d = load_sim_data(filename)
 
-        pts_2d = project_points(pts_2d, K)
-        line_2d = project_lines(line_2d, K)
-
         try:
+            pts_2d = project_points(pts_2d, K)
+            line_2d = project_lines(line_2d, K)
+
             poses = pnpl(pts_2d=pts_2d, line_2d=line_2d,
                          pts_3d=pts_3d, line_3d=line_3d, K=K, max_iters=2500)
             R, t = poses[0]

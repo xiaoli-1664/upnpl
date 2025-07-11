@@ -1,0 +1,240 @@
+
+成功读取文件:
+  真值轨迹: './simulated/10_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/10_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.9622 米 (发生在索引 3397)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.1386 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.7375 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/20_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/20_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.4826 米 (发生在索引 5262)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0898 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.4775 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/30_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/30_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.4220 米 (发生在索引 4965)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0701 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.3758 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/40_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/40_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.3047 米 (发生在索引 9671)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0605 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.3227 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/50_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/50_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.2789 米 (发生在索引 6662)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0541 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2889 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/60_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/60_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.2381 米 (发生在索引 5206)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0492 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2633 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/70_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/70_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.2173 米 (发生在索引 1254)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0448 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2397 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/80_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/80_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.2130 米 (发生在索引 812)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0421 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2242 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/90_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/90_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.2034 米 (发生在索引 3561)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0397 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2118 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.1848 米 (发生在索引 1473)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0384 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2011 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_1/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_1/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.0938 米 (发生在索引 776)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0189 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.1002 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_2/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_2/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.1848 米 (发生在索引 1473)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0384 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.2011 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_3/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_3/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.3750 米 (发生在索引 5731)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0570 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.3026 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_4/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_4/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.3831 米 (发生在索引 515)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0770 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.4057 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_5/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_5/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.5020 米 (发生在索引 2529)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.0973 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.5097 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_6/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_6/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.6322 米 (发生在索引 8448)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.1170 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.6216 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_7/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_7/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.7586 米 (发生在索引 1681)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.1371 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.7207 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_8/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_8/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.9206 米 (发生在索引 8577)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.1615 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.8431 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_9/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_9/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 0.8841 米 (发生在索引 7347)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.1808 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 0.9552 度
+
+
+成功读取文件:
+  真值轨迹: './simulated/100_0_10/gt_simulated_trajectory.txt' (10000 个位姿)
+  估计轨迹: './simulated/100_0_10/upnpl_2cam_simulated_trajectory.txt' (10000 个位姿)
+------------------------------
+最大平移误差: 1.2382 米 (发生在索引 9292)
+1. 平均绝对平移误差 (ATE - Unaligned)
+   结果: 0.2086 米
+
+2. 平均绝对旋转误差 (ARE - Unaligned)
+   结果: 1.0847 度
+
