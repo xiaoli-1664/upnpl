@@ -29,6 +29,7 @@ int main(int argc, char **argv) {
     string epnp_output_file = output_dir + "epnp_simulated_trajectory.txt";
     string upnp_output_file = output_dir + "upnp_simulated_trajectory.txt";
     string gt_output_file = output_dir + "gt_simulated_trajectory.txt";
+    string gpnp_output_file = output_dir + "gpnp.txt";
 
     vector<Eigen::Isometry3d> Tbw_upnpl_4cam;
     vector<Eigen::Isometry3d> Tbw_upnpl_3cam;
@@ -37,6 +38,7 @@ int main(int argc, char **argv) {
     vector<Eigen::Isometry3d> Tbw_epnp;
     vector<Eigen::Isometry3d> Tbw_gt;
     vector<Eigen::Isometry3d> Tbw_upnp;
+    vector<Eigen::Isometry3d> Tbw_gpnp;
     vector<double> times;
 
     double avg_upupl_1cam = 0.0;
@@ -45,6 +47,7 @@ int main(int argc, char **argv) {
     double avg_upupl_4cam = 0.0;
     double avg_epnp = 0.0;
     double avg_upnp = 0.0;
+    double avg_gpnp = 0.0;
     for (int i = 0; i < iter; ++i) {
         string simulated_data =
             output_dir + "data/data_" + to_string(i) + ".txt";
@@ -108,6 +111,12 @@ int main(int argc, char **argv) {
         Tbw_upnp.push_back(T_bw_upnp);
         avg_upnp += used_time;
 
+        Eigen::Isometry3d T_bw_upnpl_gpnp;
+        T_bw_upnpl_gpnp = opengv_GPnP(points_w, uv_c, points_cam,
+                                      simulator.cameras_, used_time);
+        Tbw_gpnp.push_back(T_bw_upnpl_gpnp);
+        avg_gpnp += used_time;
+
         // Use OpenCV's EPnP to verify the results
         Eigen::Isometry3d T_bw_epnp =
             cv_EPnP(points_w, uv_c, points_cam, simulator.cameras_, used_time);
@@ -139,6 +148,7 @@ int main(int argc, char **argv) {
     avg_upupl_4cam /= iter;
     avg_epnp /= iter;
     avg_upnp /= iter;
+    avg_gpnp /= iter;
 
     cout << "Average time for UPnPL with 1 camera: " << avg_upupl_1cam << " ms"
          << endl;
@@ -150,6 +160,7 @@ int main(int argc, char **argv) {
          << endl;
     cout << "Average time for OpenCV EPnP: " << avg_epnp << " ms" << endl;
     cout << "Average time for OpenGV UPnP: " << avg_upnp << " ms" << endl;
+    cout << "Average time for OpenGV GPnP: " << avg_gpnp << " ms" << endl;
 
     if (save) {
         utils::saveEurocTraejectory(upnpl_4cam_output_file, Tbw_upnpl_4cam,
@@ -160,6 +171,7 @@ int main(int argc, char **argv) {
                                     times);
         utils::saveEurocTraejectory(upnpl_1cam_output_file, Tbw_upnpl_1cam,
                                     times);
+        utils::saveEurocTraejectory(gpnp_output_file, Tbw_gpnp, times);
         utils::saveEurocTraejectory(epnp_output_file, Tbw_epnp, times);
         utils::saveEurocTraejectory(gt_output_file, Tbw_gt, times);
         utils::saveEurocTraejectory(upnp_output_file, Tbw_upnp, times);

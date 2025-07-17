@@ -533,6 +533,58 @@ Eigen::Isometry3d opengv_UPnP(const vector<Eigen::Vector3d> &points_w,
     }
 }
 
+Eigen::Isometry3d opengv_GPnP(const vector<Eigen::Vector3d> &points_w,
+                              const vector<Eigen::Vector3d> &uv_c,
+                              const vector<int> &points_cam,
+                              const vector<Camera> &cameras,
+                              double &used_time) {
+    bearingVectors_t bearingVectors;
+    points_t points;
+    vector<int> cam_correspondences;
+    vector<int> indices;
+    translations_t translations;
+    rotations_t rotations;
+
+    for (int i = 0; i < points_w.size(); ++i) {
+        bearingVectors.push_back(uv_c[i].normalized());
+        points.push_back(points_w[i]);
+        cam_correspondences.push_back(points_cam[i]);
+
+        indices.push_back(i);
+    }
+
+    for (auto &cam : cameras) {
+        translations.push_back(cam.T_bc.translation());
+        rotations.push_back(cam.T_bc.linear());
+    }
+
+    try {
+        auto start = chrono::high_resolution_clock::now();
+        absolute_pose::NoncentralAbsoluteAdapter adapter(
+            bearingVectors, cam_correspondences, points, translations,
+            rotations);
+
+        if (indices.size() < 4) {
+            used_time = 0.0;
+            return Eigen::Isometry3d::Identity(); // Not enough points for GPnP
+        }
+
+        transformation_t T = absolute_pose::gpnp(adapter, indices);
+        auto end = chrono::high_resolution_clock::now();
+        chrono::duration<double, std::milli> elapsed = end - start;
+        used_time = elapsed.count();
+
+        Eigen::Matrix<double, 3, 4> T_matrix = T;
+        Eigen::Isometry3d T_bw = Eigen::Isometry3d::Identity();
+        T_bw.linear() = T_matrix.block<3, 3>(0, 0);
+        T_bw.translation() = T_matrix.block<3, 1>(0, 3);
+        return T_bw.inverse();
+    } catch (const std::exception &e) {
+        used_time = 0.0;
+        return Eigen::Isometry3d::Identity(); // Return identity if error occurs
+    }
+}
+
 void saveDataForMatlab(
     const vector<Eigen::Vector3d> &points_w, const vector<double> &points_sigma,
     const vector<Eigen::VectorXd> &lines_w, const vector<double> &lines_sigma,

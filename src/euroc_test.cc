@@ -153,6 +153,7 @@ int main(int argc, char **argv) {
     string upnp_out_file = euroc_path + "upnp_trajectory_" + seq + ".csv";
     string upnpl_points_out_file = euroc_path + "upnpl_points_" + seq + ".csv";
     string upnpl_lines_out_file = euroc_path + "upnpl_lines_" + seq + ".csv";
+    string gpnp_out_file = euroc_path + "gpnp" + ".txt";
     string gt_out_file = euroc_path + "gt_trajectory_" + seq + ".csv";
 
     string cam1_file = euroc_path + "cam0/sensor.yaml";
@@ -184,10 +185,12 @@ int main(int argc, char **argv) {
     vector<Eigen::Isometry3d> Twb_gt;
     vector<Eigen::Isometry3d> Twb_upnp;
     vector<Eigen::Isometry3d> Twb_upnpl_lines;
+    vector<Eigen::Isometry3d> Twb_gpnp;
     double avg_time_upnpl = 0.0;
     double avg_time_cv = 0.0;
     double avg_time_upnp = 0.0;
     double avg_time_upnpl_points = 0.0;
+    double avg_time_gpnp = 0.0;
     for (int i = 0; i < image_files[0].size() - 91; ++i) {
         string matlab_data =
             euroc_path + "data/" + "data_" + to_string(i) + ".txt";
@@ -267,6 +270,11 @@ int main(int argc, char **argv) {
         avg_time_upnp += used_time;
         Twb_upnp.push_back(Tbw.inverse());
 
+        Tbw =
+            utils::opengv_GPnP(points_w, uv_c, points_cam, cameras, used_time);
+        avg_time_gpnp += used_time;
+        Twb_gpnp.push_back(Tbw.inverse());
+
         vector<int> points_cam_tmp;
         vector<Eigen::Vector3d> points_w_tmp;
         vector<Eigen::Vector3d> uv_c_tmp;
@@ -304,12 +312,14 @@ int main(int argc, char **argv) {
     avg_time_cv /= Twb_cv.size();
     avg_time_upnp /= Twb_upnp.size();
     avg_time_upnpl_points /= Twb_upnpl_points.size();
+    avg_time_gpnp /= Twb_gpnp.size();
 
     cout << "Average UPnPL time: " << avg_time_upnpl << " ms" << endl;
     cout << "Average OpenCV EPnP time: " << avg_time_cv << " ms" << endl;
     cout << "Average OpenGV UPnP time: " << avg_time_upnp << " ms" << endl;
     cout << "Average UPnPL only points time: " << avg_time_upnpl_points << " ms"
          << endl;
+    cout << "Average OpenGV GPnP time: " << avg_time_gpnp << " ms" << endl;
 
     saveEurocTraejectory(upnpl_out_file, Twb_upnpl, times_save);
     saveEurocTraejectory(cv_epnp_out_file, Twb_cv, times_save);
@@ -317,4 +327,5 @@ int main(int argc, char **argv) {
     saveEurocTraejectory(upnpl_points_out_file, Twb_upnpl_points, times_save);
     saveEurocTraejectory(upnpl_lines_out_file, Twb_upnpl_lines, times_save);
     saveEurocTraejectory(gt_out_file, Twb_gt, times_save);
+    saveEurocTraejectory(gpnp_out_file, Twb_gpnp, times_save);
 }

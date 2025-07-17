@@ -354,6 +354,7 @@ int main(int argc, char **argv) {
     string upnp_out_file = kitti_path + seq + "/upnp" + ".txt";
     string upnpl_points_out_file = kitti_path + seq + "/upnpl_points" + ".txt";
     string upnpl_lines_out_file = kitti_path + seq + "/upnpl_lines" + ".txt";
+    string gpnp_out_file = kitti_path + seq + "/gpnp" + ".txt";
     string gt_out_file = kitti_path + seq + "/gt" + ".txt";
 
     string stereo_file = kitti_path + "calibration/perspective.txt";
@@ -406,6 +407,7 @@ int main(int argc, char **argv) {
     vector<Eigen::Isometry3d> Twb_gt;
     vector<Eigen::Isometry3d> Twb_upnp;
     vector<Eigen::Isometry3d> Twb_upnpl_lines;
+    vector<Eigen::Isometry3d> Twb_gpnp;
     double avg_time_upnpl = 0.0;
     double avg_time_cv = 0.0;
     double avg_time_upnp = 0.0;
@@ -457,6 +459,10 @@ int main(int argc, char **argv) {
         avg_time_upnp += used_time;
         Twb_upnp.push_back(Tbw.inverse());
 
+        Tbw =
+            utils::opengv_GPnP(points_w, uv_c, points_cam, cameras, used_time);
+        Twb_gpnp.push_back(Tbw.inverse());
+
         vector<int> points_cam_tmp;
         vector<Eigen::Vector3d> points_w_tmp;
         vector<Eigen::Vector3d> uv_c_tmp;
@@ -491,5 +497,6 @@ int main(int argc, char **argv) {
     saveEurocTraejectory(upnp_out_file, Twb_upnp, times_save);
     saveEurocTraejectory(upnpl_points_out_file, Twb_upnpl_points, times_save);
     saveEurocTraejectory(upnpl_lines_out_file, Twb_upnpl_lines, times_save);
+    saveEurocTraejectory(gpnp_out_file, Twb_gpnp, times_save);
     saveEurocTraejectory(gt_out_file, Twb_gt, times_save);
 }
