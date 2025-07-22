@@ -29,7 +29,7 @@ cmake ..
 make -j
 ```
 
-## Usage
+## Test
 
 ### Synthetic Experiments
 
