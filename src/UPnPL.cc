@@ -110,11 +110,6 @@ void UPnPL::solveUPnPL_DLS(const vector<Eigen::Vector3d> &points_w,
                            const vector<Eigen::Matrix3d> &Rbc,
                            const vector<Eigen::Vector3d> &tbc,
                            Eigen::Matrix3d &R_bw, Eigen::Vector3d &t_bw) {
-    // TODO: 算法感觉有问题，当outlier偏差很大时，结果不稳定
-    // 计算出来的error 非常大，之后尝试下使用真值计算误差，看看error多少
-    // 仿真实验发现外点(误差大)对平移影响很大
-    // 当有外点且旋转caley参数较大时，error就比较大，由于设定的error和caley的模长有关，因此结果偏向于模长更小的caley
-    // 上述似乎是caley参数化的奇异性问题，但用四元数参数化又会增加变量和约束
     Eigen::Vector3d true_r;
     // true_r << 0.189469, 0.189469, 0;
     // true_r << 0, 0, 0.267949;
