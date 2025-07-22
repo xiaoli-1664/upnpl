@@ -33,6 +33,14 @@ void UPnPL::solveMain(const vector<Eigen::Vector3d> &points_w,
     if (!is_normalized_)
         return;
 
+    vector<Eigen::Matrix3d> R_cw_tmp(Rbc.size());
+    vector<Eigen::Vector3d> t_cw_tmp(tbc.size());
+
+    for (int i = 0; i < Rbc.size(); ++i) {
+        R_cw_tmp[i] = Rbc[i].transpose() * R_bw;
+        t_cw_tmp[i] = Rbc[i].transpose() * (t_bw - tbc[i]);
+    }
+
     is_normalized_ = false;
 
     vector<Eigen::VectorXd> lines_w_corrected(lines_w.size(),
@@ -41,10 +49,12 @@ void UPnPL::solveMain(const vector<Eigen::Vector3d> &points_w,
         int cam = lines_cam[i];
         Eigen::Vector3d Xs_w = lines_w[i].head<3>();
         Eigen::Vector3d Xe_w = lines_w[i].tail<3>();
-        Eigen::Vector3d Xs_c_proj =
-            Rbc[cam].transpose() * (R_bw * Xs_w + t_bw - tbc[cam]);
-        Eigen::Vector3d Xe_c_proj =
-            Rbc[cam].transpose() * (R_bw * Xe_w + t_bw - tbc[cam]);
+        const auto &R_cw = R_cw_tmp[cam];
+        const auto &t_cw = t_cw_tmp[cam];
+        Eigen::Vector3d Xs_c_proj = R_cw * Xs_w + t_cw;
+        // Rbc[cam].transpose() * (R_bw * Xs_w + t_bw - tbc[cam]);
+        Eigen::Vector3d Xe_c_proj = R_cw * Xe_w + t_cw;
+        // Rbc[cam].transpose() * (R_bw * Xe_w + t_bw - tbc[cam]);
 
         Eigen::Vector3d Xc = Xs_c_proj;
         Eigen::Vector3d V = (Xe_c_proj - Xs_c_proj).normalized();
@@ -74,13 +84,17 @@ void UPnPL::solveMain(const vector<Eigen::Vector3d> &points_w,
             computeCorrectness(Xe_c_proj_plane, Xe_c_plane, v, line_param, de);
 
         lines_w_corrected[i].head<3>() =
-            R_bw.transpose() *
-            (Rbc[cam] * backProjPointToLine(Xs_c_proj_plane, Xc, V) + tbc[cam] -
-             t_bw);
+            R_cw.transpose() *
+            (backProjPointToLine(Xs_c_proj_plane, Xc, V) - t_cw);
+        // R_bw.transpose() *
+        // (Rbc[cam] * backProjPointToLine(Xs_c_proj_plane, Xc, V) + tbc[cam] -
+        //  t_bw);
         lines_w_corrected[i].tail<3>() =
-            R_bw.transpose() *
-            (Rbc[cam] * backProjPointToLine(Xe_c_proj_plane, Xc, V) + tbc[cam] -
-             t_bw);
+            R_cw.transpose() *
+            (backProjPointToLine(Xe_c_proj_plane, Xc, V) - t_cw);
+        // R_bw.transpose() *
+        // (Rbc[cam] * backProjPointToLine(Xe_c_proj_plane, Xc, V) + tbc[cam] -
+        //  t_bw);
     }
 
     solveUPnPL_EPnPL(points_w, lines_w_corrected, uv_c, normals_c, points_cam,
@@ -536,8 +550,11 @@ double UPnPL::solveN1(const vector<Eigen::Vector3d> &control_points_w,
 
     Eigen::MatrixXd Iij;
     vector<Eigen::MatrixXd> as;
+    as.reserve(6);
     vector<Eigen::VectorXd> bs;
+    bs.reserve(6);
     vector<double> cs;
+    cs.reserve(6);
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
             Iij = Eigen::MatrixXd::Zero(3, 12);
@@ -755,8 +772,11 @@ double UPnPL::solveN2(const vector<Eigen::Vector3d> &control_points_w,
 
     Eigen::MatrixXd Iij;
     vector<Eigen::MatrixXd> as, as_M;
+    as.reserve(6);
     vector<Eigen::VectorXd> bs, bs_M;
+    bs.reserve(6);
     vector<double> cs, cs_M;
+    cs.reserve(6);
 
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
@@ -794,9 +814,10 @@ double UPnPL::solveN2(const vector<Eigen::Vector3d> &control_points_w,
     u *= 100;
 
     constructM_N2(as_M, bs_M, cs_M, u, M);
-    Eigen::MatrixXd M0 = M.block<4, 4>(0, 0) -
-                         M.block<4, 6>(0, 4) * M.block<6, 6>(4, 4).inverse() *
-                             M.block<6, 4>(4, 0);
+    Eigen::MatrixXd M_inv_block =
+        M.block<6, 6>(4, 4).partialPivLu().solve(M.block<6, 4>(4, 0));
+    Eigen::MatrixXd M0 =
+        M.block<4, 4>(0, 0) - M.block<4, 6>(0, 4) * M_inv_block;
 
     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
     if (es.info() != Eigen::Success) {
@@ -872,8 +893,11 @@ double UPnPL::solveN4(const vector<Eigen::Vector3d> &control_points_w,
 
     Eigen::MatrixXd Iij;
     vector<Eigen::MatrixXd> as, as_M;
+    as.reserve(6);
     vector<Eigen::VectorXd> bs, bs_M;
+    bs.reserve(6);
     vector<double> cs, cs_M;
+    cs.reserve(6);
 
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
@@ -916,10 +940,14 @@ double UPnPL::solveN4(const vector<Eigen::Vector3d> &control_points_w,
     u *= 100;
 
     constructM_N4(as_M, bs_M, cs_M, u, M);
+    Eigen::MatrixXd M_inv_block =
+        M.block<110, 110>(16, 16).partialPivLu().solve(M.block<110, 16>(16, 0));
     Eigen::MatrixXd M0 =
-        M.block<16, 16>(0, 0) - M.block<16, 110>(0, 16) *
-                                    M.block<110, 110>(16, 16).inverse() *
-                                    M.block<110, 16>(16, 0);
+        M.block<16, 16>(0, 0) - M.block<16, 110>(0, 16) * M_inv_block;
+    // Eigen::MatrixXd M0 =
+    //     M.block<16, 16>(0, 0) - M.block<16, 110>(0, 16) *
+    //                                 M.block<110, 110>(16, 16).inverse() *
+    //                                 M.block<110, 16>(16, 0);
     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
     if (es.info() != Eigen::Success) {
         // cerr << "Eigen decomposition failed N4." << endl;
@@ -999,8 +1027,11 @@ double UPnPL::solveN3(const vector<Eigen::Vector3d> &control_points_w,
 
     Eigen::MatrixXd Iij;
     vector<Eigen::MatrixXd> as, as_M;
+    as.reserve(6);
     vector<Eigen::VectorXd> bs, bs_M;
+    bs.reserve(6);
     vector<double> cs, cs_M;
+    cs.reserve(6);
 
     for (int i = 0; i < 4; ++i) {
         for (int j = i + 1; j < 4; ++j) {
@@ -1040,10 +1071,14 @@ double UPnPL::solveN3(const vector<Eigen::Vector3d> &control_points_w,
     u *= 100;
 
     constructM_N3(as_M, bs_M, cs_M, u, M);
+    Eigen::MatrixXd M_inv_block =
+        M.block<27, 27>(8, 8).partialPivLu().solve(M.block<27, 8>(8, 0));
     Eigen::MatrixXd M0 =
-        M.block<8, 8>(0, 0) - M.block<8, 27>(0, 8) *
-                                  M.block<27, 27>(8, 8).inverse() *
-                                  M.block<27, 8>(8, 0);
+        M.block<8, 8>(0, 0) - M.block<8, 27>(0, 8) * M_inv_block;
+    // Eigen::MatrixXd M0 =
+    //     M.block<8, 8>(0, 0) - M.block<8, 27>(0, 8) *
+    //                               M.block<27, 27>(8, 8).inverse() *
+    //                               M.block<27, 8>(8, 0);
 
     Eigen::EigenSolver<Eigen::MatrixXd> es(M0);
     if (es.info() != Eigen::Success) {
