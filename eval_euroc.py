@@ -31,10 +31,11 @@ def calculate_ate_translation_error(gt_poses, est_poses, threshold=1000):
     """
     est_trans = est_poses[:, :3]
     gt_trans = gt_poses[:, :3]
+    # est_norms = np.linalg.norm(est_trans, axis=1)
 
     errors = np.linalg.norm(gt_trans - est_trans, axis=1)
-    valid_mask = (~np.isnan(errors)) & (errors < threshold)
-
+    valid_mask = ((~np.isnan(errors)) & (
+        errors < threshold))
     valid_errors = errors[valid_mask]
 
     if len(valid_errors) == 0:

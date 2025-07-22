@@ -10,6 +10,14 @@ simulated/
 build/
 .cache/
 
+line/
+point/
+script/
+dataset/
+
+compile_commands.json
+*.sh
+
 # Precompiled Headers
 *.gch
 *.pch

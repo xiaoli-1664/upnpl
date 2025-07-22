@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
     double avg_upupl_2cam = 0.0;
     double avg_upupl_3cam = 0.0;
     double avg_upupl_4cam = 0.0;
+    double avg_upnpl_points = 0.0;
     double avg_epnp = 0.0;
     double avg_upnp = 0.0;
     double avg_gpnp = 0.0;
@@ -105,6 +106,15 @@ int main(int argc, char **argv) {
         Tbw_upnpl_1cam.push_back(T_bw_est_isometry);
         avg_upupl_1cam += used_time;
 
+        lines_c.clear();
+        lines_cam.clear();
+        lines_w.clear();
+
+        T_bw_est_isometry =
+            myUPnPL(points_w, lines_w, uv_c, lines_c, points_cam, lines_cam,
+                    simulator.cameras_, 4, used_time);
+        avg_upnpl_points += used_time;
+
         Eigen::Isometry3d T_bw_upnp;
         T_bw_upnp = opengv_UPnP(points_w, uv_c, points_cam, simulator.cameras_,
                                 used_time);
@@ -146,17 +156,23 @@ int main(int argc, char **argv) {
     avg_upupl_2cam /= iter;
     avg_upupl_3cam /= iter;
     avg_upupl_4cam /= iter;
+    avg_upnpl_points /= iter;
     avg_epnp /= iter;
     avg_upnp /= iter;
     avg_gpnp /= iter;
 
-    cout << "Average time for UPnPL with 1 camera: " << avg_upupl_1cam << " ms"
-         << endl;
-    cout << "Average time for UPnPL with 2 cameras: " << avg_upupl_2cam << " ms"
-         << endl;
-    cout << "Average time for UPnPL with 3 cameras: " << avg_upupl_3cam << " ms"
-         << endl;
+    // cout << "Average time for UPnPL with 1 camera: " << avg_upupl_1cam << "
+    // ms"
+    //      << endl;
+    // cout << "Average time for UPnPL with 2 cameras: " << avg_upupl_2cam << "
+    // ms"
+    //      << endl;
+    // cout << "Average time for UPnPL with 3 cameras: " << avg_upupl_3cam << "
+    // ms"
+    //      << endl;
     cout << "Average time for UPnPL with 4 cameras: " << avg_upupl_4cam << " ms"
+         << endl;
+    cout << "Average time for UPnPL with points: " << avg_upnpl_points << " ms"
          << endl;
     cout << "Average time for OpenCV EPnP: " << avg_epnp << " ms" << endl;
     cout << "Average time for OpenGV UPnP: " << avg_upnp << " ms" << endl;

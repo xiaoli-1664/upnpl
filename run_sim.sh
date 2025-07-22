@@ -14,16 +14,24 @@
 #     ./build/sim_test "$i" "$j" 2 10000
 # done
 
+for ((i = 10; i <= 200; i += 10)) do
+    j=$((i))
+    echo "Running ./build/sim_test $j $i 0"
+    ./build/sim_test "$i" "$j" 0 10000
+done
+
+
+
 # for i in {1..10}
 # do
 #     echo "Running ./build/sim_test 100 0 $i"
 #     ./build/sim_test 100 0 "$i" 10000
 # done
 #
-for ((i = 10; i <= 90; i += 10)) do
-    echo "Running ./build/sim_test $i 0 2"
-    ./build/sim_test "$i" 0 2 10000
-done
+# for ((i = 10; i <= 90; i += 10)) do
+#     echo "Running ./build/sim_test $i 0 2"
+#     ./build/sim_test "$i" 0 2 10000
+# done
 
 # for i in {1..10}
 # do
