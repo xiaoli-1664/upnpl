@@ -347,7 +347,7 @@ int main(int argc, char **argv) {
     }
     string seq = "2013_05_28_drive_" + string(argv[1]) + "_sync";
     bool is_02 = stoi(argv[1]) == 2;
-    string kitti_path = "/home/ljj/dataset/kitti-360/";
+    string kitti_path = "~/dataset/kitti-360/";
 
     string upnpl_out_file = kitti_path + seq + "/upnpl" + ".txt";
     string cv_epnp_out_file = kitti_path + seq + "/cv_epnp" + ".txt";

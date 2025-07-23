@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     string seq = argv[1];
-    string euroc_path = "/home/ljj/dataset/euroc/" + seq + "/mav0/";
+    string euroc_path = "~/dataset/euroc/" + seq + "/mav0/";
 
     string upnpl_out_file = euroc_path + "upnpl_trajectory_" + seq + ".csv";
     string cv_epnp_out_file = euroc_path + "cv_epnp_trajectory_" + seq + ".csv";
