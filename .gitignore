@@ -1,0 +1,43 @@
+# Prerequisites
+*.d
+
+simulated/
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+build/
+.cache/
+
+line/
+point/
+script/
+dataset/
+
+compile_commands.json
+*.sh
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
