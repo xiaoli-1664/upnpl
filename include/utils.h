@@ -141,9 +141,9 @@ void randomEndPoints(Eigen::VectorXd &lines, bool is_random) {
 
 class Simulator {
   public:
-    Simulator(int num_cams, int n_points, int m_lines, double noise_std)
+    Simulator(int num_cams, int n_points, int m_lines, double noise_std, double outlier_ratio=0.0)
         : num_cams_(num_cams), n_points_(n_points), m_lines_(m_lines),
-          noise_std_(noise_std) {
+          noise_std_(noise_std), outlier_ratio_(outlier_ratio) {
         rng_ = std::mt19937(rd_());
         noise_ = std::normal_distribution<>(0.0, noise_std);
         // generate random ground truth transformation
@@ -180,7 +180,7 @@ class Simulator {
 
   public:
     int num_cams_, n_points_, m_lines_;
-    double noise_std_;
+    double noise_std_, outlier_ratio_;
     std::vector<Camera> cameras_;
     std::vector<Point3D> cube_points_[3];
     std::vector<Line3D> cube_lines_[3];
@@ -287,8 +287,13 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
     normals_c.clear();
     points_cam.clear();
     lines_cam.clear();
+
+    std::uniform_real_distribution<double> prob_dist(0.0, 1.0);
+
     for (int i = 0; i < num_cams_; ++i) {
         const Camera &cam = cameras_[i];
+        std::uniform_real_distribution<double> rand_u(0, cam.image_size[0]);
+        std::uniform_real_distribution<double> rand_v(0, cam.image_size[1]);
         int cube_id = 0;
         if (i < 2) {
             cube_id = 0; // First cube for first two cameras
@@ -298,9 +303,13 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
             cube_id = 2; // Third cube for fourth camera
         }
         for (const auto &pt_b : cube_points_[cube_id]) {
-            // if (i != 2)
-            //     continue;
-            Eigen::Vector2d uv = projectWithNoise(pt_b.pt, cam);
+            Eigen::Vector2d uv;
+            if (prob_dist(rng_) < outlier_ratio_) {
+                uv << rand_u(rng_), rand_v(rng_);
+            }
+            else {
+                uv = projectWithNoise(pt_b.pt, cam);
+            }
             if (uv(0) < 0 || uv(0) >= cam.image_size[0] || uv(1) < 0 ||
                 uv(1) >= cam.image_size[1]) {
                 continue; // Skip points outside image bounds
@@ -313,8 +322,14 @@ void Simulator::generateData(vector<Eigen::Vector3d> &points_w,
         for (const auto &line_b : cube_lines_[cube_id]) {
             // if (i != 2)
             //     continue;
-            Eigen::Vector2d uv1 = projectWithNoise(line_b.p1, cam);
-            Eigen::Vector2d uv2 = projectWithNoise(line_b.p2, cam);
+            Eigen::Vector2d uv1, uv2;
+            if (prob_dist(rng_) < outlier_ratio_) {
+                uv1 << rand_u(rng_), rand_v(rng_);
+                uv2 << rand_u(rng_), rand_v(rng_);
+            } else {
+                uv1 = projectWithNoise(line_b.p1, cam);
+                uv2 = projectWithNoise(line_b.p2, cam);
+            }
             if (uv1(0) < 0 || uv1(0) >= cam.image_size[0] || uv1(1) < 0 ||
                 uv1(1) >= cam.image_size[1] || uv2(0) < 0 ||
                 uv2(0) >= cam.image_size[0] || uv2(1) < 0 ||
@@ -463,6 +478,9 @@ Eigen::Isometry3d cv_EPnP(const vector<Eigen::Vector3d> &points_w,
         bool success =
             cv::solvePnP(object_points, image_points, camera_matrix,
                          dist_coeffs, rvec, tvec, false, cv::SOLVEPNP_EPNP);
+            // cv::solvePnPRansac(object_points, image_points, camera_matrix,
+            //                  dist_coeffs, rvec, tvec, false, 100, 2.0, 0.99,
+            //                  cv::noArray(), cv::SOLVEPNP_AP3P);
         auto end = chrono::high_resolution_clock::now();
         chrono::duration<double, std::milli> elapsed = end - start;
         used_time = elapsed.count();
@@ -686,4 +704,157 @@ void saveEurocTraejectory(const string &output_file,
 
     cout << "Trajectory saved to " << output_file << endl;
 }
+
+double computePointError(const Vector3d& P_w, const Vector3d& uv_obs, 
+                         const Isometry3d& T_bc, const Isometry3d& T_wb) {
+    Isometry3d T_cw = (T_wb * T_bc).inverse();
+    Vector3d P_c = T_cw * P_w;
+    
+    if (P_c.z() <= 0) return 1e9; 
+    
+    Vector2d uv_proj = P_c.head<2>() / P_c.z();
+    return (uv_proj - uv_obs.head<2>()).norm();
+}
+
+double computeLineError(const VectorXd& L_w, const VectorXd& L_c,
+                        const Isometry3d& T_bc, const Isometry3d& T_wb) {
+    Isometry3d T_cw = (T_wb * T_bc).inverse();
+    Vector3d p_c1 = T_cw * Vector3d(L_w.head<3>());
+    Vector3d p_c2 = T_cw * Vector3d(L_w.tail<3>());
+    if (p_c1.z() <= 0 || p_c2.z() <= 0) return 1e9;
+
+    Vector2d proj1 = p_c1.head<2>() / p_c1.z();
+    Vector2d proj2 = p_c2.head<2>() / p_c2.z();
+
+    Vector3d n = (Vector3d(L_c.head<3>()).cross(Vector3d(L_c.tail<3>()))).normalized();
+
+    double scale = sqrt(n.x() * n.x() + n.y() * n.y());
+    if (scale < 1e-6) return 1e9;
+    
+    double d1 = std::abs(Vector3d(proj1.x(), proj1.y(), 1.0).dot(n)) / scale;
+    double d2 = std::abs(Vector3d(proj2.x(), proj2.y(), 1.0).dot(n)) / scale;
+    
+    return (d1 + d2) / 2.0;
+}
+
+Eigen::Isometry3d myUPnPL_RANSAC(const vector<Eigen::Vector3d> &points_w_tmp,
+                                 const vector<Eigen::VectorXd> &lines_w_tmp,
+                                 const vector<Eigen::Vector3d> &uv_c_tmp,
+                                 const vector<Eigen::VectorXd> &lines_c_tmp,
+                                 const vector<int> &points_cam_tmp,
+                                 const vector<int> &lines_cam_tmp,
+                                 const vector<Camera> &cameras, int num_cam,
+                                 int n_min, int m_min, int max_iters, double threshold,
+                                 double &used_time) {
+    
+    vector<Eigen::Matrix3d> R_bc;
+    vector<Eigen::Vector3d> t_bc;
+    for (int i = 0; i < num_cam; ++i) {
+        R_bc.push_back(cameras[i].T_bc.linear());
+        t_bc.push_back(cameras[i].T_bc.translation());
+    }
+
+    vector<Eigen::Vector3d> p_w_all, uv_c_all;
+    vector<Eigen::VectorXd> l_w_all, l_c_all;
+    vector<int> p_cam_all, l_cam_all;
+    for (size_t i = 0; i < points_w_tmp.size(); ++i) {
+        if (points_cam_tmp[i] < num_cam) {
+            p_w_all.push_back(points_w_tmp[i]);
+            uv_c_all.push_back(uv_c_tmp[i]);
+            p_cam_all.push_back(points_cam_tmp[i]);
+        }
+    }
+    for (size_t i = 0; i < lines_w_tmp.size(); ++i) {
+        if (lines_cam_tmp[i] < num_cam) {
+            l_w_all.push_back(lines_w_tmp[i]);
+            l_c_all.push_back(lines_c_tmp[i]);
+            l_cam_all.push_back(lines_cam_tmp[i]);
+        }
+    }
+
+    Eigen::Isometry3d best_T = Eigen::Isometry3d::Identity();
+    int max_inliers = -1;
+    vector<int> best_p_inliers, best_l_inliers;
+    
+    std::random_device rd;
+    std::mt19937 g(rd());
+    UPnPL::UPnPL upnpl_solver(true);
+
+    auto start_time = chrono::high_resolution_clock::now();
+    for (int iter = 0; iter < max_iters; ++iter) {
+        vector<Eigen::Vector3d> p_w_s, uv_c_s;
+        vector<Eigen::VectorXd> l_w_s, l_c_s;
+        vector<int> p_cam_s, l_cam_s;
+
+        if (n_min > 0 && p_w_all.size() >= n_min) {
+            vector<int> idx(p_w_all.size()); iota(idx.begin(), idx.end(), 0);
+            shuffle(idx.begin(), idx.end(), g);
+            for(int j=0; j<n_min; ++j) {
+                p_w_s.push_back(p_w_all[idx[j]]); uv_c_s.push_back(uv_c_all[idx[j]]); p_cam_s.push_back(p_cam_all[idx[j]]);
+            }
+        }
+        if (m_min > 0 && l_w_all.size() >= m_min) {
+            vector<int> idx(l_w_all.size()); iota(idx.begin(), idx.end(), 0);
+            shuffle(idx.begin(), idx.end(), g);
+            for(int j=0; j<m_min; ++j) {
+                l_w_s.push_back(l_w_all[idx[j]]); l_c_s.push_back(l_c_all[idx[j]]); l_cam_s.push_back(l_cam_all[idx[j]]);
+            }
+        }
+
+        Eigen::Matrix3d R_tmp; Eigen::Vector3d t_tmp;
+        upnpl_solver.solveMain(p_w_s, l_w_s, uv_c_s, l_c_s, p_cam_s, l_cam_s, R_bc, t_bc, R_tmp, t_tmp);
+        
+        Eigen::Isometry3d T_curr = Eigen::Isometry3d::Identity();
+        T_curr.linear() = R_tmp; T_curr.translation() = t_tmp;
+
+        vector<int> curr_p_inliers, curr_l_inliers;
+        for (int i = 0; i < p_w_all.size(); ++i){
+            double pe = computePointError(p_w_all[i], uv_c_all[i], cameras[p_cam_all[i]].T_bc, T_curr.inverse());
+            // cout << "point error: " << pe << endl;
+            if (pe < threshold)
+                curr_p_inliers.push_back(i);
+
+        }
+        for (int i = 0; i < l_w_all.size(); ++i) {
+            double le = computeLineError(l_w_all[i], l_c_all[i], cameras[l_cam_all[i]].T_bc, T_curr.inverse());
+            // cout << "line error: " << le << endl;
+            if (le < threshold)
+                curr_l_inliers.push_back(i);
+        }
+
+        int total_inliers = curr_p_inliers.size() + curr_l_inliers.size();
+        if (total_inliers > max_inliers) {
+            max_inliers = total_inliers;
+            best_T = T_curr;
+            best_p_inliers = curr_p_inliers;
+            best_l_inliers = curr_l_inliers;
+        }
+        // cout << "points number: " << points_w_tmp.size() << ", line number: " << lines_w_tmp.size() << endl;
+        // cout << "RANSAC Iteration " << iter + 1 << ": Inliers = " << total_inliers << endl;
+        // cout << "point inliers: " << curr_p_inliers.size() << ", line inliers: " << curr_l_inliers.size() << endl;
+    }
+
+    if (max_inliers >= 4) {
+        vector<Eigen::Vector3d> p_w_r, uv_c_r;
+        vector<Eigen::VectorXd> l_w_r, l_c_r;
+        vector<int> p_cam_r, l_cam_r;
+        for(int idx : best_p_inliers) {
+            p_w_r.push_back(p_w_all[idx]); uv_c_r.push_back(uv_c_all[idx]); p_cam_r.push_back(p_cam_all[idx]);
+        }
+        for(int idx : best_l_inliers) {
+            l_w_r.push_back(l_w_all[idx]); l_c_r.push_back(l_c_all[idx]); l_cam_r.push_back(l_cam_all[idx]);
+        }
+        Eigen::Matrix3d R_ref; Eigen::Vector3d t_ref;
+        upnpl_solver.solveMain(p_w_r, l_w_r, uv_c_r, l_c_r, p_cam_r, l_cam_r, R_bc, t_bc, R_ref, t_ref);
+        best_T.linear() = R_ref; best_T.translation() = t_ref;
+    }
+
+    auto end_time = chrono::high_resolution_clock::now();
+    used_time = chrono::duration<double, std::milli>(end_time - start_time).count();
+    
+    return best_T;
+}
+
+
+
 }; // namespace utils
