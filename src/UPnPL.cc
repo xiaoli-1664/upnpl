@@ -1,4 +1,5 @@
 #include "UPnPL.h"
+#include "point_constraints.h"
 #include "constructM.h"
 // #include "constructM_N2.h"
 #include "constructM_N2_d2.h"
@@ -444,19 +445,16 @@ void UPnPL::solveUPnPL_EPnPL(const vector<Eigen::Vector3d> &points_w,
     }
 
     for (int j = 0; j < n_; ++j) {
-        Eigen::MatrixXd Aj(2, 12);
-        Eigen::Vector2d bj;
-        double u = uv_b_[j](0), v = uv_b_[j](1), h = uv_b_[j](2);
-        bj << tbc_n_[points_cam[j]](2) * u - h * tbc_n_[points_cam[j]](0),
-            tbc_n_[points_cam[j]](2) * v - h * tbc_n_[points_cam[j]](1);
-        Aj << -h * alpha_[m_ * 8 + j * 4], 0, u * alpha_[m_ * 8 + j * 4],
-            -h * alpha_[m_ * 8 + j * 4 + 1], 0, u * alpha_[m_ * 8 + j * 4 + 1],
-            -h * alpha_[m_ * 8 + j * 4 + 2], 0, u * alpha_[m_ * 8 + j * 4 + 2],
-            -h * alpha_[m_ * 8 + j * 4 + 3], 0, u * alpha_[m_ * 8 + j * 4 + 3],
-            0, -h * alpha_[m_ * 8 + j * 4], v * alpha_[m_ * 8 + j * 4], 0,
-            -h * alpha_[m_ * 8 + j * 4 + 1], v * alpha_[m_ * 8 + j * 4 + 1], 0,
-            -h * alpha_[m_ * 8 + j * 4 + 2], v * alpha_[m_ * 8 + j * 4 + 2], 0,
-            -h * alpha_[m_ * 8 + j * 4 + 3], v * alpha_[m_ * 8 + j * 4 + 3];
+        const Eigen::Vector3d f = uv_b_[j].normalized();
+        const Eigen::Matrix<double, 2, 3> D =
+            detail::pointBearingComplement(f).transpose();
+        Eigen::Matrix<double, 2, 12> Aj;
+        for (int k = 0; k < 4; ++k) {
+            Aj.block<2, 3>(0, 3 * k) = alpha_[m_ * 8 + j * 4 + k] * D;
+        }
+        // sum_k alpha_k C_k - tbc_n is the point relative to its camera,
+        // expressed in the body frame and in the existing normalized scale.
+        const Eigen::Vector2d bj = D * tbc_n_[points_cam[j]];
         AtA += Aj.transpose() * Aj;
         y += Aj.transpose() * bj;
     }
